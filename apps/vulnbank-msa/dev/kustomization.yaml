@@ -4,7 +4,7 @@ kind: Kustomization
 # ArgoCD-facing desired state for the VulnBank MSA dev profile.
 # ArgoCD may need Kustomize Helm support enabled for this profile.
 helmGlobals:
-  chartHome: ../../../../helm
+  chartHome: ../../../helm
 helmCharts:
   - name: vulnbank-msa
     releaseName: vulnbank-msa

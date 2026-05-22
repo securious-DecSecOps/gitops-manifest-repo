@@ -5,7 +5,7 @@ kind: Kustomization
 # It renders the shared Helm chart with environment-specific values.
 # ArgoCD may need Kustomize Helm support enabled for this profile.
 helmGlobals:
-  chartHome: ../../../../helm
+  chartHome: ../../../helm
 helmCharts:
   - name: simple-web
     releaseName: simple-web
