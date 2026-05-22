@@ -1,0 +1,87 @@
+nameOverride: vulnbank-msa
+namespace: secure-path-dev
+
+database:
+  enabled: true
+  name: vulnbank-db
+  image:
+    repository: mariadb
+    tag: "10.6"
+    pullPolicy: IfNotPresent
+  rootPassword: ""
+  databaseName: vulnbank
+  service:
+    port: 3306
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+phpServiceDefaults:
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+  env:
+    DB_HOST: vulnbank-db
+    DB_USER: root
+    DB_PASSWORD: ""
+    DB_NAME: vulnbank
+    USER_SERVICE_URL: http://vulnbank-msa-user-service:8080/api.php
+    TRANSACTION_SERVICE_URL: http://vulnbank-msa-transaction-service:8080/api.php
+    STATUS_SERVICE_URL: http://vulnbank-msa-status-service:8080/api.php
+    FILE_SERVICE_URL: http://vulnbank-msa-file-service:8080/api.php
+    SETTINGS_SERVICE_URL: http://vulnbank-msa-settings-service:8080/api.php
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+services:
+  user-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-user-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  transaction-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-transaction-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  status-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-status-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  file-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-file-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  settings-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-settings-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  frontend:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-frontend
+      tag: dev
+      pullPolicy: IfNotPresent
+    env:
+      USER_SERVICE_URL: http://vulnbank-msa-user-service:8080/api.php
+      TRANSACTION_SERVICE_URL: http://vulnbank-msa-transaction-service:8080/api.php
+      STATUS_SERVICE_URL: http://vulnbank-msa-status-service:8080/api.php
+      FILE_SERVICE_URL: http://vulnbank-msa-file-service:8080/api.php
+      SETTINGS_SERVICE_URL: http://vulnbank-msa-settings-service:8080/api.php

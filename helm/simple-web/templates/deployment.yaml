@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.nameOverride | default .Chart.Name | quote }}
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.nameOverride | default .Chart.Name | quote }}
+    app.kubernetes.io/part-of: secure-k8s-delivery-path
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.nameOverride | default .Chart.Name | quote }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.nameOverride | default .Chart.Name | quote }}
+        app.kubernetes.io/part-of: secure-k8s-delivery-path
+    spec:
+      containers:
+        - name: {{ .Values.nameOverride | default .Chart.Name | quote }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
+          ports:
+            - containerPort: {{ .Values.containerPort }}
+          resources:
+{{ toYaml .Values.resources | nindent 12 }}
+

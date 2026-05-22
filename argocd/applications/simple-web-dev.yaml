@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: simple-web-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: secure-k8s-delivery-path
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/REPLACE_ME/secure-k8s-delivery-path.git
+    targetRevision: HEAD
+    path: gitops/apps/simple-web/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: secure-path-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  # To use manual sync instead, remove the automated block above and sync from
+  # the ArgoCD UI or with `argocd app sync simple-web-dev`.
+

@@ -1,0 +1,22 @@
+{{- $root := . }}
+{{- range $serviceName, $service := .Values.services }}
+{{- $defaults := $root.Values.phpServiceDefaults }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-%s" $root.Values.nameOverride $serviceName | quote }}
+  namespace: {{ $root.Values.namespace | quote }}
+  labels:
+    app.kubernetes.io/name: {{ $serviceName | quote }}
+    app.kubernetes.io/part-of: {{ $root.Values.nameOverride | quote }}
+spec:
+  type: {{ dig "service" "type" $defaults.service.type $service | quote }}
+  selector:
+    app.kubernetes.io/name: {{ $serviceName | quote }}
+    app.kubernetes.io/part-of: {{ $root.Values.nameOverride | quote }}
+  ports:
+    - name: http
+      port: {{ dig "service" "port" $defaults.service.port $service }}
+      targetPort: {{ dig "containerPort" $defaults.containerPort $service }}
+{{ end }}

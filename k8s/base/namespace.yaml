@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: secure-k8s-delivery-path
+

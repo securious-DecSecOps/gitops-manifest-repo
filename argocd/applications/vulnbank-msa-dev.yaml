@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secubank-vulnbank-msa-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # NOTE: GitHub org slug; correct the spelling if your actual org differs
+    # (e.g., "DevSecOps" vs "DecSecOps"). Update this URL when the
+    # gitops-manifest-repo is created or moved.
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    targetRevision: main
+    path: apps/vulnbank-msa/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: secure-path-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

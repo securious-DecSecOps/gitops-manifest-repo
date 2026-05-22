@@ -1,0 +1,111 @@
+nameOverride: vulnbank-msa
+namespace: secure-path-dev
+
+database:
+  enabled: true
+  name: vulnbank-db
+  image:
+    repository: mariadb
+    tag: "10.6"
+    pullPolicy: IfNotPresent
+  rootPassword: ""
+  databaseName: vb_user
+  service:
+    port: 3306
+  serviceCredentials:
+    user-service:
+      dbName: vb_user
+      dbUser: user_svc
+      dbPassword: user_svc_pw
+    transaction-service:
+      dbName: vb_tx
+      dbUser: tx_svc
+      dbPassword: tx_svc_pw
+    file-service:
+      dbName: vb_file
+      dbUser: file_svc
+      dbPassword: file_svc_pw
+    settings-service:
+      dbName: vb_settings
+      dbUser: settings_svc
+      dbPassword: settings_svc_pw
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+phpServiceDefaults:
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+  probePath: /healthz
+  env:
+    USER_SERVICE_URL: http://vulnbank-msa-user-service:8080/api.php
+    TRANSACTION_SERVICE_URL: http://vulnbank-msa-transaction-service:8080/api.php
+    STATUS_SERVICE_URL: http://vulnbank-msa-status-service:8080/api.php
+    FILE_SERVICE_URL: http://vulnbank-msa-file-service:8080/api.php
+    SETTINGS_SERVICE_URL: http://vulnbank-msa-settings-service:8080/api.php
+    FRONTEND_SERVICE_URL: http://vulnbank-msa-frontend:8080/
+    VB_OTP: "0"
+    UPLOAD_PATH: uploads
+    SMS_API: "0"
+    VB_API: none
+    NEXMO_API_KEY: "0000000000"
+    NEXMO_API_SECRET: "0000000000000000"
+    VULNBANK_TOKEN_SECRET: "vb-poc-token-secret-change-me" # PoC default only; replace per environment.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+services:
+  user-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-user-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  transaction-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-transaction-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  status-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-status-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  file-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-file-service
+      tag: dev
+      pullPolicy: IfNotPresent
+    # file-service runs `php -S` without a router script, so /healthz must be a real PHP file.
+    probePath: /healthz.php
+
+  settings-service:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-settings-service
+      tag: dev
+      pullPolicy: IfNotPresent
+
+  frontend:
+    image:
+      repository: localhost:9092/secure-delivery/vulnbank-msa-frontend
+      tag: dev
+      pullPolicy: IfNotPresent
+    env:
+      USER_SERVICE_URL: http://vulnbank-msa-user-service:8080/api.php
+      TRANSACTION_SERVICE_URL: http://vulnbank-msa-transaction-service:8080/api.php
+      STATUS_SERVICE_URL: http://vulnbank-msa-status-service:8080/api.php
+      FILE_SERVICE_URL: http://vulnbank-msa-file-service:8080/api.php
+      SETTINGS_SERVICE_URL: http://vulnbank-msa-settings-service:8080/api.php

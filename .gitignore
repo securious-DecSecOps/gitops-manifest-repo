@@ -1,0 +1,5 @@
+.local/
+reports/
+*.log
+.DS_Store
+*:Zone.Identifier

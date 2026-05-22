@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vulnbank-db-init-sql
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    app.kubernetes.io/name: vulnbank-db-init-sql
+    app.kubernetes.io/part-of: {{ .Values.nameOverride | quote }}
+    app.kubernetes.io/managed-by: Helm
+data:
+{{- range $path, $_ := .Files.Glob "files/db-init/*.sql" }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
