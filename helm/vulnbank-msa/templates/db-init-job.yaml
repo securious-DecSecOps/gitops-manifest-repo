@@ -10,9 +10,13 @@ metadata:
     app.kubernetes.io/part-of: {{ .Values.nameOverride | quote }}
     app.kubernetes.io/managed-by: Helm
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "10"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # Helm CLI hook (helm install/upgrade에서 동작)
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    # ArgoCD sync hook (ArgoCD native Helm deployment에서 동작)
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
   template:
     metadata:
