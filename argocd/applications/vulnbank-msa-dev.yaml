@@ -11,7 +11,13 @@ spec:
     # gitops-manifest-repo is created or moved.
     repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
     targetRevision: main
-    path: apps/vulnbank-msa/dev
+    # Native Helm source instead of Kustomize-with-Helm. Avoids needing
+    # `kustomize.buildOptions: --enable-helm` on the existing argocd-cm.
+    path: helm/vulnbank-msa
+    helm:
+      releaseName: vulnbank-msa
+      valueFiles:
+        - ../../apps/vulnbank-msa/dev/values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: secure-path-dev
