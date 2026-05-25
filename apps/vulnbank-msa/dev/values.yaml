@@ -47,37 +47,37 @@ services:
   user-service:
     image:
       repository: localhost:8082/secubank/vulnbank-msa-user-service
-      tag: 21
+      tag: 23
       pullPolicy: IfNotPresent
 
   transaction-service:
     image:
       repository: localhost:8082/secubank/vulnbank-msa-transaction-service
-      tag: 21
+      tag: 23
       pullPolicy: IfNotPresent
 
   status-service:
     image:
       repository: localhost:8082/secubank/vulnbank-msa-status-service
-      tag: 21
+      tag: 23
       pullPolicy: IfNotPresent
 
   file-service:
     image:
       repository: localhost:8082/secubank/vulnbank-msa-file-service
-      tag: 21
+      tag: 23
       pullPolicy: IfNotPresent
 
   settings-service:
     image:
       repository: localhost:8082/secubank/vulnbank-msa-settings-service
-      tag: 21
+      tag: 23
       pullPolicy: IfNotPresent
 
   frontend:
     image:
       repository: localhost:8082/secubank/vulnbank-msa-frontend
-      tag: 21
+      tag: 23
       pullPolicy: IfNotPresent
     env:
       USER_SERVICE_URL: http://vulnbank-msa-user-service:8080/api.php
