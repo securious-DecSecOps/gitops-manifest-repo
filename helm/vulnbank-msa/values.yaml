@@ -10,6 +10,10 @@ database:
     pullPolicy: IfNotPresent
   rootPassword: ""
   databaseName: vb_user
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClassName: "" # Empty value uses the cluster default StorageClass: kind standard / k3s local-path.
   service:
     port: 3306
   serviceCredentials:

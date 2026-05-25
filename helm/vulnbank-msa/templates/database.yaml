@@ -10,6 +10,8 @@ metadata:
     app.kubernetes.io/part-of: {{ .Values.nameOverride | quote }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Values.database.name | quote }}
@@ -31,8 +33,39 @@ spec:
               value: {{ .Values.database.databaseName | quote }}
           ports:
             - containerPort: {{ .Values.database.service.port }}
+          {{- if .Values.database.persistence.enabled }}
+          volumeMounts:
+            - name: mariadb-data
+              mountPath: /var/lib/mysql
+          {{- end }}
           resources:
             {{- toYaml .Values.database.resources | nindent 12 }}
+      {{- if .Values.database.persistence.enabled }}
+      volumes:
+        - name: mariadb-data
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-data" .Values.database.name | quote }}
+      {{- end }}
+{{- if .Values.database.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-data" .Values.database.name | quote }}
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.database.name | quote }}
+    app.kubernetes.io/part-of: {{ .Values.nameOverride | quote }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.database.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.database.persistence.size | quote }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
