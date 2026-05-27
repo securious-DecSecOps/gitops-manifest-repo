@@ -1,0 +1,35 @@
+# Falco Helm Chart Configuration Values for SecuBank Golden Path
+# Target Namespace: falco
+# Chart Version Pinning: 9.0.0
+
+driver:
+  kind: modern_ebpf
+
+tty: true
+
+customRules:
+  vulnbank-rules.yaml: |-
+    - rule: Shell spawned in VulnBank container
+      desc: A shell was spawned inside a VulnBank microservice container (unauthorized terminal access)
+      condition: >
+        spawned_process
+        and container
+        and (container.image.repository contains "vulnbank" or container.name contains "vulnbank")
+        and proc.name in (bash, sh, ash, zsh, ksh)
+      output: >
+        Shell spawned in VulnBank container (user=%user.name user_uuid=%user.uuid parent=%proc.pname cmdline=%proc.cmdline image=%container.image.repository:%container.image.tag container_id=%container.id)
+      priority: WARNING
+      tags: [mitre_execution, vulnbank, runtime_security]
+
+    - rule: VulnBank PHP file upload detected
+      desc: A PHP file write or creation was detected inside the VulnBank web directory (potential webshell upload)
+      condition: >
+        open_write
+        and container
+        and (container.image.repository contains "vulnbank" or container.name contains "vulnbank")
+        and (fd.name startswith "/var/www/html" or fd.name startswith "/usr/share/nginx/html")
+        and fd.name endswith ".php"
+      output: >
+        PHP file upload/write detected in VulnBank web root (file=%fd.name user=%user.name user_uuid=%user.uuid proc=%proc.name cmdline=%proc.cmdline container_id=%container.id)
+      priority: CRITICAL
+      tags: [mitre_persistence, vulnbank, webshell_detection]

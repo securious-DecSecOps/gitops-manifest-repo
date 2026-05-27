@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: 'https://falcosecurity.github.io/charts'
+      chart: falco
+      targetRevision: 9.0.0
+      helm:
+        valueFiles:
+          - $values/platform/falco/values.yaml
+    - repoURL: 'https://github.com/securious-DecSecOps/gitops-manifest-repo.git'
+      targetRevision: feature-platform-falco
+      ref: values
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: falco
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
