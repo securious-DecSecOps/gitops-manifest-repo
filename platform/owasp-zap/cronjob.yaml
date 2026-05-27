@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: owasp-zap
+  namespace: owasp-zap
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: owasp-zap-sa
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: zap
+            image: softwaresecurityproject/zap-stable:latest
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            command:
+            - /bin/bash
+            - -c
+            - |
+              zap-baseline.py -t http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080 -g /zap/config/zap-baseline.conf -r report.html
+              EXIT_CODE=$?
+              echo "=== OWASP ZAP REPORT START ==="
+              if [ -f /zap/wrk/report.html ]; then
+                cat /zap/wrk/report.html
+              else
+                echo "Report file not found!"
+              fi
+              echo "=== OWASP ZAP REPORT END ==="
+              exit $EXIT_CODE
+            volumeMounts:
+            - name: zap-workdir
+              mountPath: /zap/wrk
+            - name: zap-config
+              mountPath: /zap/config
+          volumes:
+          - name: zap-workdir
+            emptyDir: {}
+          - name: zap-config
+            configMap:
+              name: owasp-zap-config
