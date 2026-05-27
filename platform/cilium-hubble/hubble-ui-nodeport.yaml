@@ -1,0 +1,35 @@
+# =============================================================================
+# Hubble UI 외부 접근용 NodePort 서비스
+# =============================================================================
+#
+# 이 파일은 Cilium Helm Chart가 생성하는 기본 ClusterIP 서비스(hubble-ui)와는
+# 별개로, AWS 런타임 서버의 퍼블릭 IP를 통해 브라우저에서 직접 Hubble UI에
+# 접근할 수 있도록 NodePort 서비스를 추가로 선언합니다.
+#
+# 접속 URL: http://<RUNTIME_SERVER_PUBLIC_IP>:32000
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubble-ui-nodeport
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: hubble-ui
+    app.kubernetes.io/part-of: cilium
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    # 이 서비스는 Helm Chart 외부에서 선언된 보조 서비스입니다.
+    # Cilium Helm Chart의 업그레이드/삭제 사이클과 독립적으로 유지됩니다.
+    platform.secubank.io/purpose: "hubble-ui-external-access"
+spec:
+  type: NodePort
+  selector:
+    # Cilium Helm Chart가 hubble-ui Pod에 부여하는 레이블을 타겟팅
+    app.kubernetes.io/name: hubble-ui
+    app.kubernetes.io/part-of: cilium
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80          # 서비스 내부 포트
+      targetPort: 8081  # hubble-ui 컨테이너가 리슨하는 기본 포트
+      nodePort: 32000   # 외부에서 접근하는 노드 포트 (AWS SG에서 32000/TCP 인바운드 허용 필요)
