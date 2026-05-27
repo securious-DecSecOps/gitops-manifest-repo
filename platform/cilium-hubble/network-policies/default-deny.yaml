@@ -1,0 +1,44 @@
+# =============================================================================
+# Zero-Trust 기본 정책: secure-path-dev 네임스페이스의 모든 트래픽 기본 거부
+# =============================================================================
+#
+# 이 파일은 CiliumNetworkPolicy CRD를 사용하여 `secure-path-dev` 네임스페이스의
+# 모든 Pod에 대해 명시적으로 허용되지 않은 모든 Ingress(인입)/Egress(인출) 트래픽을
+# 전면 차단하는 제로트러스트 기반 정책입니다.
+#
+# 이 정책 단독으로는 클러스터가 동작하지 않습니다.
+# 반드시 allow-vulnbank.yaml의 허용 정책과 함께 사용해야 합니다.
+# =============================================================================
+
+# ---
+# 정책 1: 모든 Pod의 기본 Ingress(외부 → Pod) 트래픽 차단
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  # 이 네임스페이스 내의 모든 Pod를 대상으로 적용
+  endpointSelector: {}
+  # ingress 키는 있지만 규칙이 비어있음 → 모든 인입 트래픽 거부
+  ingress: []
+
+---
+# 정책 2: 모든 Pod의 기본 Egress(Pod → 외부) 트래픽 차단
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  # 이 네임스페이스 내의 모든 Pod를 대상으로 적용
+  endpointSelector: {}
+  # egress 키는 있지만 규칙이 비어있음 → 모든 인출 트래픽 거부
+  egress: []
