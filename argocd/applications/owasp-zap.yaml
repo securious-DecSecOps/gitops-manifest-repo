@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: owasp-zap
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    # [최종 운영] PR 머지 후 메인 브랜치 기준 영구 반영을 위한 기본값
+    targetRevision: main
+    # [개발/테스트 단계] AWS 환경에서 격리 진단 테스트 시 아래 라인의 주석을 해제하여 사용하세요.
+    # targetRevision: feature-platform-zap
+    path: platform/owasp-zap
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: owasp-zap
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
