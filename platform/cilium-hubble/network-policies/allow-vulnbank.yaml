@@ -1,0 +1,282 @@
+# =============================================================================
+# VulnBank MSA 전용 L3-L7 허용 정책 (Zero-Trust Whitelist)
+# =============================================================================
+#
+# 대상 네임스페이스: secure-path-dev
+# 서비스 구성:
+#   - frontend           (TCP 8080, 외부 접근 허용)
+#   - user-service       (TCP 8080, 내부 전용)
+#   - transaction-service(TCP 8080, 내부 전용)
+#   - status-service     (TCP 8080, 내부 전용)
+#   - file-service       (TCP 8080, 내부 전용)
+#   - settings-service   (TCP 8080, 내부 전용)
+#   - vulnbank-db        (TCP 3306, DB 전용)
+#
+# Pod 레이블 (helm/vulnbank-msa/templates/deployment.yaml 기반):
+#   app.kubernetes.io/name: <서비스명>
+#   app.kubernetes.io/part-of: vulnbank-msa
+# =============================================================================
+
+# ---
+# 정책 1: DNS Egress 허용
+#   모든 VulnBank Pod가 kube-dns를 통한 도메인 주소 확인(DNS 쿼리)을 허용합니다.
+#   DNS 없이는 서비스 간 hostname 기반 통신이 불가능합니다.
+#   L7 DNS 필터링으로 "*" (모든 도메인)을 허용합니다.
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  # 네임스페이스 내 모든 Pod에 적용
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            # kube-system 네임스페이스의 kube-dns Pod를 타겟팅
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            # L7 DNS 화이트리스트: 모든 도메인 허용 (서비스 디스커버리 허용)
+            dns:
+              - matchPattern: "*"
+
+---
+# 정책 2: Frontend Ingress 허용 (외부 → Frontend TCP 8080)
+#   외부 클라이언트(OWASP ZAP, 브라우저 등)가 프론트엔드에 접근할 수 있도록 허용합니다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-frontend-ingress
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/part-of: vulnbank-msa
+  ingress:
+    # 외부 모든 소스에서 8080 포트 인입 허용 (LoadBalancer / NodePort / 클러스터 내부 접근 포함)
+    - fromEntities:
+        - world   # 클러스터 외부 트래픽
+        - cluster # 클러스터 내부 (ArgoCD, 헬스체크 등)
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+---
+# 정책 3: Frontend Egress → Backend 서비스 허용 (L7 HTTP 화이트리스트)
+#   프론트엔드가 5개 백엔드 마이크로서비스의 /api.php 엔드포인트로 HTTP 요청을 보낼 수 있도록
+#   L7 수준(HTTP 메서드 + 경로)에서 정밀하게 허용합니다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-frontend-to-backends
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/part-of: vulnbank-msa
+  egress:
+    # → user-service
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: user-service
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: "GET"
+                path: "/api.php"
+              - method: "POST"
+                path: "/api.php"
+
+    # → transaction-service
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: transaction-service
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: "GET"
+                path: "/api.php"
+              - method: "POST"
+                path: "/api.php"
+
+    # → status-service
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: status-service
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: "GET"
+                path: "/api.php"
+              - method: "POST"
+                path: "/api.php"
+
+    # → file-service
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: file-service
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: "GET"
+                path: "/api.php"
+              - method: "POST"
+                path: "/api.php"
+
+    # → settings-service
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: settings-service
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: "GET"
+                path: "/api.php"
+              - method: "POST"
+                path: "/api.php"
+
+---
+# 정책 4: Backend 서비스 Ingress → Frontend로부터 유입 허용 (L7 HTTP)
+#   5개 백엔드 서비스가 Frontend로부터 오는 HTTP 요청을 수신할 수 있도록 허용합니다.
+#   app.kubernetes.io/part-of: vulnbank-msa 레이블을 공유하는 backend Pod들을 하나의 정책으로 통합합니다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-backend-ingress-from-frontend
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  # 5개 백엔드 마이크로서비스 모두 적용 (frontend와 db 제외)
+  endpointSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - user-service
+          - transaction-service
+          - status-service
+          - file-service
+          - settings-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: frontend
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: "GET"
+                path: "/api.php"
+              - method: "POST"
+                path: "/api.php"
+
+---
+# 정책 5: Backend 서비스 Egress → vulnbank-db 허용 (TCP 3306)
+#   5개 백엔드 마이크로서비스가 MariaDB에 데이터베이스 쿼리를 보낼 수 있도록 허용합니다.
+#   MySQL 프로토콜은 L7 HTTP 필터링이 아닌 L4 TCP 포트 제어로 보호합니다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-backend-to-database
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - user-service
+          - transaction-service
+          - status-service
+          - file-service
+          - settings-service
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: vulnbank-db
+            app.kubernetes.io/part-of: vulnbank-msa
+      toPorts:
+        - ports:
+            - port: "3306"
+              protocol: TCP
+
+---
+# 정책 6: Database Ingress → Backend로부터 유입 허용 (TCP 3306)
+#   vulnbank-db가 5개 백엔드 마이크로서비스로부터 오는 DB 커넥션을 수신할 수 있도록 허용합니다.
+#   vulnbank-db의 Egress는 허용 정책 없음 → Default Deny에 의해 외부 통신 원천 차단됩니다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-database-ingress-from-backends
+  namespace: secure-path-dev
+  labels:
+    app.kubernetes.io/part-of: zero-trust-policy
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vulnbank-db
+      app.kubernetes.io/part-of: vulnbank-msa
+  ingress:
+    - fromEndpoints:
+        - matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - user-service
+                - transaction-service
+                - status-service
+                - file-service
+                - settings-service
+      toPorts:
+        - ports:
+            - port: "3306"
+              protocol: TCP
