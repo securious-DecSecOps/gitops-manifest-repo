@@ -3,3 +3,10 @@ reports/
 *.log
 .DS_Store
 *:Zone.Identifier
+
+# Local planning and tasks (personal md files)
+task.md
+todo.md
+agents.md
+implementation_plan.md
+walkthrough.md
