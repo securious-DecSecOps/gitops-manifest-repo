@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cilium
+  namespace: argocd
+  annotations:
+    # Cilium은 kube-system 네임스페이스에 배포되므로
+    # ArgoCD의 namespace 격리 정책에서 예외 처리가 필요할 수 있습니다.
+    # ArgoCD v2.5+ 에서는 별도 AppProject RBAC 없이 배포 가능합니다.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+
+  # Multiple Sources: 공식 헬름 레포(Chart) + 당사 Git 레포(values.yaml)를 동시 참조
+  sources:
+    # ① 소스 1: 공식 Cilium Helm 레포에서 Chart 가져오기 (버전 핀닝)
+    - repoURL: 'https://helm.cilium.io'
+      chart: cilium
+      targetRevision: 1.15.6
+      helm:
+        releaseName: cilium
+        valueFiles:
+          # $values는 소스 2에서 ref: values로 정의된 Git 레포 루트를 가리킴
+          - $values/platform/cilium-hubble/values.yaml
+
+    # ② 소스 2: 당사 GitOps 레포에서 커스텀 values.yaml 제공
+    - repoURL: 'https://github.com/securious-DecSecOps/gitops-manifest-repo.git'
+      targetRevision: feature-platform-cilium
+      ref: values  # 이 소스를 "$values" 변수로 등록
+
+  destination:
+    server: 'https://kubernetes.default.svc'
+    # Cilium은 클러스터 수준 CNI이므로 kube-system 네임스페이스에 배포
+    namespace: kube-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Cilium은 ServerSideApply를 사용하여 CRD 및 대규모 리소스 충돌 방지
+      - ServerSideApply=true
