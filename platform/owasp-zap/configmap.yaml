@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: owasp-zap-config
+  namespace: owasp-zap
+data:
+  zap-baseline.conf: |
+    # ZAP baseline scan configuration file
+    # Format: pluginId <TAB> [WARN|FAIL|IGNORE] <TAB> comment
+    10096	WARN	Timestamp Disclosure - Unix
+    10027	WARN	Information Disclosure - Suspicious Comments
+    10037	WARN	Server Leaks Information via "X-Powered-By" HTTP Response Header Field(s)
