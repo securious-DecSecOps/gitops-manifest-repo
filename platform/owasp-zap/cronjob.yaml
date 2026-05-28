@@ -26,7 +26,7 @@ spec:
             image: zaproxy/zap-stable:latest
             securityContext:
               allowPrivilegeEscalation: false
-              readOnlyRootFilesystem: true
+              readOnlyRootFilesystem: false
               capabilities:
                 drop:
                 - ALL
@@ -34,7 +34,7 @@ spec:
             - /bin/bash
             - -c
             - |
-              zap-baseline.py -t http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080 -g /zap/config/zap-baseline.conf -r report.html
+              zap-baseline.py -t http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080 -c /zap/config/zap-baseline.conf -r report.html
               EXIT_CODE=$?
               echo "=== OWASP ZAP REPORT START ==="
               if [ -f /zap/wrk/report.html ]; then
