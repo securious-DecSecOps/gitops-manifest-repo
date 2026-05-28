@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secubank-aws-dev-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    targetRevision: main
+    path: argocd/aws-apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

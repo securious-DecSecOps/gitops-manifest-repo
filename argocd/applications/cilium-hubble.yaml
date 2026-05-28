@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cilium-hubble
+  namespace: argocd
+  annotations:
+    # Cilium itself is installed by runtime-server.sh before ArgoCD starts.
+    # This Application only manages post-CNI Hubble UI exposure.
+    # CiliumNetworkPolicy files are kept under platform/cilium-hubble/network-policies
+    # but are not applied by default because default-deny can break DAST until verified.
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    targetRevision: main
+    path: platform/cilium-hubble
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

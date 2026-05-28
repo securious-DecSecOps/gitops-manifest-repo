@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secubank-vulnbank-msa-aws-dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    targetRevision: main
+    path: helm/vulnbank-msa
+    helm:
+      releaseName: vulnbank-msa
+      valueFiles:
+        - ../../apps/vulnbank-msa/aws-dev/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: secure-path-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

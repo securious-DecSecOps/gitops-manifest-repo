@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secubank-kube-bench
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: kube-bench
+    app.kubernetes.io/part-of: secure-k8s-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    # Points to main by default, but can be targeted to feature/platform-kube-bench for testing
+    targetRevision: main
+    path: platform/kube-bench
+  destination:
+    server: https://kubernetes.default.svc
+    # Deployed into the kube-bench dedicated namespace
+    namespace: kube-bench
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
