@@ -25,7 +25,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: kube-bench
-              image: aquasecurity/kube-bench:latest
+              image: aquasec/kube-bench:latest
               command: ["kube-bench", "--benchmark", "k3s-cis-1.7"]
               securityContext:
                 privileged: true
