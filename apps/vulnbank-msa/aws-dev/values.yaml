@@ -4,36 +4,36 @@ namespace: secure-path-dev
 services:
   user-service:
     image:
-      repository: 10.0.1.10:8082/secubank/vulnbank-msa-user-service
-      tag: 24
+      repository: 10.0.1.169:8082/secubank/vulnbank-msa-user-service
+      tag: 3
       pullPolicy: IfNotPresent
 
   transaction-service:
     image:
-      repository: 10.0.1.10:8082/secubank/vulnbank-msa-transaction-service
-      tag: 24
+      repository: 10.0.1.169:8082/secubank/vulnbank-msa-transaction-service
+      tag: 3
       pullPolicy: IfNotPresent
 
   status-service:
     image:
-      repository: 10.0.1.10:8082/secubank/vulnbank-msa-status-service
-      tag: 24
+      repository: 10.0.1.169:8082/secubank/vulnbank-msa-status-service
+      tag: 3
       pullPolicy: IfNotPresent
 
   file-service:
     image:
-      repository: 10.0.1.10:8082/secubank/vulnbank-msa-file-service
-      tag: 24
+      repository: 10.0.1.169:8082/secubank/vulnbank-msa-file-service
+      tag: 3
       pullPolicy: IfNotPresent
 
   settings-service:
     image:
-      repository: 10.0.1.10:8082/secubank/vulnbank-msa-settings-service
-      tag: 24
+      repository: 10.0.1.169:8082/secubank/vulnbank-msa-settings-service
+      tag: 3
       pullPolicy: IfNotPresent
 
   frontend:
     image:
-      repository: 10.0.1.10:8082/secubank/vulnbank-msa-frontend
-      tag: 24
+      repository: 10.0.1.169:8082/secubank/vulnbank-msa-frontend
+      tag: 3
       pullPolicy: IfNotPresent
