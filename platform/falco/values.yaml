@@ -7,6 +7,20 @@ driver:
 
 tty: true
 
+# Prometheus 메트릭 노출 → Grafana 시각화 (보안 이벤트/룰 카운터)
+metrics:
+  enabled: true
+  interval: 1m
+  outputRule: true
+  rulesCountersEnabled: true
+  resourceUtilizationEnabled: true
+  kernelEventCountersEnabled: true
+
+# kube-prometheus-stack가 자동 발견하도록 ServiceMonitor 생성
+serviceMonitor:
+  create: true
+  interval: 30s
+
 customRules:
   vulnbank-rules.yaml: |-
     - rule: Shell spawned in VulnBank container
