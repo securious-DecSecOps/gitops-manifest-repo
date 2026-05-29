@@ -41,14 +41,9 @@ customRules:
         container
         and (container.image.repository contains "vulnbank" or container.name contains "vulnbank")
         and (
-          (open_write
-            and (fd.name startswith "/var/www/html" or fd.name startswith "/usr/share/nginx/html")
-            and fd.name endswith ".php")
+          (open_write and fd.name endswith ".php")
           or
-          (evt.type in (rename, renameat, renameat2)
-            and evt.dir = <
-            and fs.path.target endswith ".php"
-            and (fs.path.target startswith "/var/www/html" or fs.path.target contains "/uploads/"))
+          (evt.type in (rename, renameat, renameat2) and evt.dir = < and fs.path.target endswith ".php")
         )
       output: >
         PHP file written/moved in VulnBank web root (file=%fd.name target=%fs.path.target user=%user.name proc=%proc.name cmdline=%proc.cmdline container_id=%container.id image=%container.image.repository:%container.image.tag k8s_pod=%k8s.pod.name)
