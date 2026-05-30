@@ -7,9 +7,10 @@ spec:
   schedule: "0 2 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      backoffLimit: 0
       template:
         spec:
           serviceAccountName: owasp-zap-sa
@@ -43,7 +44,11 @@ spec:
                 echo "Report file not found!"
               fi
               echo "=== OWASP ZAP REPORT END ==="
-              exit $EXIT_CODE
+              # zap-baseline 종료코드: 1=FAIL, 2=WARN (둘 다 '발견'이지 실행오류 아님).
+              # 스캔이 돌아갔으면 잡은 성공 처리하고, 3 이상(ZAP 실행/설정 오류)만 실패로 전파한다.
+              # (findings 자체는 DefectDojo로 보내 관리 — 잡 실패로 다루지 않는다)
+              if [ "${EXIT_CODE}" -ge 3 ]; then exit "${EXIT_CODE}"; fi
+              exit 0
             volumeMounts:
             - name: zap-workdir
               mountPath: /zap/wrk
