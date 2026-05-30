@@ -49,3 +49,11 @@ customRules:
         PHP file written/moved in VulnBank web root (file=%fd.name target=%fs.path.target user=%user.name proc=%proc.name cmdline=%proc.cmdline container_id=%container.id image=%container.image.repository:%container.image.tag k8s_pod=%k8s.pod.name)
       priority: CRITICAL
       tags: [mitre_persistence, vulnbank, webshell_detection]
+falcosidekick:
+  enabled: true
+  config:
+    defectdojo:
+      url: "http://10.0.1.134:8080"
+      apikey: "476420350f0300624bdb4d1e8fcd8eb3f485559c"
+      engagementid: "1"
+      minimumpriority: "warning"
