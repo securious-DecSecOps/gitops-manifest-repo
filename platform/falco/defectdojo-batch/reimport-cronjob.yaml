@@ -183,6 +183,7 @@ spec:
                       "engagement": os.environ["DEFECTDOJO_ENGAGEMENT_ID"],
                       "product_name": "VulnBank",
                       "engagement_name": "falco",
+                      "auto_create_context": "true",
                       "test_title": test_title,
                       "close_old_findings": "false",
                       "push_to_jira": "false",
