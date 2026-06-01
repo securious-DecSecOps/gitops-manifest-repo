@@ -55,4 +55,14 @@ customRules:
       priority: CRITICAL
       tags: [mitre_persistence, vulnbank, webshell_detection]
 falcosidekick:
-  enabled: false
+  enabled: true
+  config:
+    slack:
+      minimumpriority: "warning"
+      outputformat: "all"
+    extraEnv:
+      - name: SLACK_WEBHOOKURL
+        valueFrom:
+          secretKeyRef:
+            name: falco-slack-webhook
+            key: webhookurl

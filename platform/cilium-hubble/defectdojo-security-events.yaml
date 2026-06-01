@@ -88,6 +88,11 @@ spec:
                     secretKeyRef:
                       name: defectdojo-api-token
                       key: token
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: hubble-slack-webhook
+                      key: webhookurl
               command:
                 - python3
                 - -c
@@ -234,6 +239,22 @@ spec:
                   except urllib.error.HTTPError as exc:
                       print(exc.read().decode("utf-8"), file=sys.stderr)
                       raise
+
+                  if findings:
+                      slack_payload = {
+                          "text": (
+                              f"Cilium/Hubble detected {len(findings)} dropped traffic finding(s) "
+                              f"for {os.environ['HUBBLE_NAMESPACE']} and reimported them to DefectDojo."
+                          )
+                      }
+                      slack_req = urllib.request.Request(
+                          os.environ["SLACK_WEBHOOK_URL"],
+                          data=json.dumps(slack_payload).encode("utf-8"),
+                          headers={"Content-Type": "application/json"},
+                          method="POST",
+                      )
+                      with urllib.request.urlopen(slack_req, timeout=10) as slack_resp:
+                          print(f"Slack notification sent: HTTP {slack_resp.status}")
 
                   print(f"DefectDojo Cilium/Hubble reimport success: {test_title}")
               volumeMounts:
