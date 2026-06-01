@@ -68,6 +68,7 @@ spec:
                   import http.client
                   import json
                   import os
+                  import re
                   import ssl
                   import sys
                   import urllib.error
@@ -111,6 +112,55 @@ spec:
                       "EMERGENCY": "Critical",
                   }
 
+                  def parse_falco_line(line, fallback_date, fallback_object):
+                      line = line.strip()
+                      if not line:
+                          return None
+
+                      if line.startswith("{"):
+                          try:
+                              event = json.loads(line)
+                          except json.JSONDecodeError:
+                              return None
+                          fields = event.get("output_fields") or {}
+                          return {
+                              "priority": str(event.get("priority", "")).upper(),
+                              "rule": event.get("rule") or "Falco runtime alert",
+                              "object_id": fields.get("k8s.pod.name")
+                              or fields.get("container.id")
+                              or fallback_object,
+                              "date": str(event.get("time") or fallback_date).split("T")[0],
+                              "description": event.get("output") or line,
+                          }
+
+                      rule = None
+                      priority = None
+                      if "Shell spawned in VulnBank container" in line:
+                          rule = "Shell spawned in VulnBank container"
+                          priority = "WARNING"
+                      elif "PHP file written/moved" in line or "VulnBank PHP file upload detected" in line:
+                          rule = "VulnBank PHP file upload detected"
+                          priority = "CRITICAL"
+                      else:
+                          return None
+
+                      pod_match = re.search(r"\bk8s_(?:pod_name|pod)=([^\s)]+)", line)
+                      container_match = re.search(r"\bcontainer_id=([^\s)]+)", line)
+                      object_id = (
+                          pod_match.group(1)
+                          if pod_match
+                          else container_match.group(1)
+                          if container_match
+                          else fallback_object
+                      )
+                      return {
+                          "priority": priority,
+                          "rule": rule,
+                          "object_id": object_id,
+                          "date": fallback_date,
+                          "description": line,
+                      }
+
                   for pod in pods:
                       pod_name = pod["metadata"]["name"]
                       logs_path = (
@@ -126,37 +176,34 @@ spec:
                           continue
 
                       for line in log_body.splitlines():
-                          line = line.strip()
-                          if not line.startswith("{"):
-                              continue
-                          try:
-                              event = json.loads(line)
-                          except json.JSONDecodeError:
+                          parsed = parse_falco_line(line, run_date, pod_name)
+                          if not parsed:
                               continue
 
-                          priority = str(event.get("priority", "")).upper()
+                          priority = parsed["priority"]
                           if priority not in priority_map:
                               continue
 
-                          fields = event.get("output_fields") or {}
-                          rule = event.get("rule") or "Falco runtime alert"
-                          object_id = fields.get("k8s.pod.name") or fields.get("container.id") or pod_name
+                          rule = parsed["rule"]
+                          object_id = parsed["object_id"]
                           unique_id = f"falco:{rule}:{object_id}"
                           severity = priority_map[priority]
-                          event_date = str(event.get("time") or run_date).split("T")[0]
+                          event_date = parsed["date"]
                           findings_by_id[unique_id] = {
                               "title": rule,
                               "severity": severity,
-                              "description": event.get("output") or rule,
+                              "description": parsed["description"],
                               "date": event_date,
                               "unique_id_from_tool": unique_id,
                               "active": True,
                               "verified": True,
                               "false_p": False,
                               "duplicate": False,
-                              "mitigated": None,
+                              "dynamic_finding": True,
+                              "static_finding": False,
                           }
 
+                  print(f"Prepared {len(findings_by_id)} Falco finding(s) for DefectDojo")
                   report = json.dumps({"findings": list(findings_by_id.values())}).encode("utf-8")
 
                   def multipart(fields, files):

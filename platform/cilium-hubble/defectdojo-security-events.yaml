@@ -116,6 +116,14 @@ spec:
                               return str(current)
                       return default
 
+                  def first_workload_name(flow, side):
+                      workloads = flow.get(side, {}).get("workloads")
+                      if isinstance(workloads, list) and workloads:
+                          name = workloads[0].get("name")
+                          if name:
+                              return str(name)
+                      return None
+
                   groups = {}
                   if os.path.exists(events_path):
                       with open(events_path, "r", encoding="utf-8") as f:
@@ -129,16 +137,17 @@ spec:
                                   continue
                               flow = item.get("flow") if isinstance(item.get("flow"), dict) else item
                               source_ns = flow_value(flow, ("source", "namespace"))
-                              source_workload = flow_value(
+                              source_workload = first_workload_name(flow, "source") or flow_value(
                                   flow,
                                   ("source", "pod_name"),
                                   ("source", "workload_name"),
                               )
-                              dest_ns = flow_value(flow, ("destination", "namespace"))
+                              dest_ns = flow_value(flow, ("destination", "namespace"), default="world")
                               dest_workload = flow_value(
                                   flow,
                                   ("destination", "pod_name"),
                                   ("destination", "workload_name"),
+                                  ("IP", "destination"),
                               )
                               port = flow_value(
                                   flow,
@@ -167,10 +176,12 @@ spec:
                               "verified": True,
                               "false_p": False,
                               "duplicate": False,
-                              "mitigated": None,
+                              "dynamic_finding": True,
+                              "static_finding": False,
                           }
                       )
 
+                  print(f"Prepared {len(findings)} Cilium/Hubble finding(s) for DefectDojo")
                   report = json.dumps({"findings": findings}).encode("utf-8")
 
                   def multipart(fields, files):
