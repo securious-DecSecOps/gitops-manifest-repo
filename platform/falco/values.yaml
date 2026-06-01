@@ -7,6 +7,11 @@ driver:
 
 tty: true
 
+falco:
+  jsonOutput: true
+  jsonIncludeOutputProperty: true
+  jsonIncludeTagsProperty: true
+
 # Prometheus 메트릭 노출 → Grafana 시각화 (보안 이벤트/룰 카운터)
 metrics:
   enabled: true
@@ -50,10 +55,4 @@ customRules:
       priority: CRITICAL
       tags: [mitre_persistence, vulnbank, webshell_detection]
 falcosidekick:
-  enabled: true
-  config:
-    defectdojo:
-      url: "http://10.0.1.134:8080"
-      apikey: "476420350f0300624bdb4d1e8fcd8eb3f485559c"
-      engagementid: "1"
-      minimumpriority: "warning"
+  enabled: false

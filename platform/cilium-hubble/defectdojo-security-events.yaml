@@ -1,0 +1,223 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cilium-hubble-defectdojo-reimport
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cilium-hubble-defectdojo-reimport
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cilium-hubble-defectdojo-reimport
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: cilium-hubble-defectdojo-reimport
+    namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cilium-hubble-defectdojo-reimport
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cilium-hubble-defectdojo-reimport
+  namespace: kube-system
+spec:
+  schedule: "20 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: cilium-hubble-defectdojo-reimport
+          restartPolicy: Never
+          volumes:
+            - name: work
+              emptyDir: {}
+          initContainers:
+            - name: collect-hubble-events
+              image: bitnami/kubectl:1.30
+              env:
+                - name: HUBBLE_NAMESPACE
+                  value: "secure-path-dev"
+                - name: HUBBLE_VERDICT
+                  value: "DROPPED"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+
+                  CILIUM_POD="$(kubectl -n kube-system get pods -l k8s-app=cilium -o jsonpath='{.items[0].metadata.name}')"
+                  kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+                    hubble observe --namespace "$HUBBLE_NAMESPACE" --verdict "$HUBBLE_VERDICT" --last 1000 -o json \
+                    > /work/hubble-events.jsonl || true
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+          containers:
+            - name: reimport
+              image: python:3.12-alpine
+              env:
+                - name: DEFECTDOJO_URL
+                  value: "http://10.0.1.134:8080"
+                - name: DEFECTDOJO_ENGAGEMENT_ID
+                  value: "10"
+                - name: DEFECTDOJO_SCAN_TYPE
+                  value: "Generic Findings Import"
+                - name: HUBBLE_NAMESPACE
+                  value: "secure-path-dev"
+                - name: HUBBLE_VERDICT
+                  value: "DROPPED"
+                - name: DEFECTDOJO_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: defectdojo-api-token
+                      key: token
+              command:
+                - python3
+                - -c
+                - |
+                  import datetime
+                  import json
+                  import os
+                  import urllib.request
+                  import uuid
+
+                  run_date = datetime.datetime.utcnow().date().isoformat()
+                  test_title = f"Cilium Hubble Security Events - {run_date}"
+                  events_path = "/work/hubble-events.jsonl"
+
+                  def flow_value(flow, *paths, default="unknown"):
+                      for path in paths:
+                          current = flow
+                          for part in path:
+                              if not isinstance(current, dict) or part not in current:
+                                  current = None
+                                  break
+                              current = current[part]
+                          if current not in (None, ""):
+                              return str(current)
+                      return default
+
+                  groups = {}
+                  if os.path.exists(events_path):
+                      with open(events_path, "r", encoding="utf-8") as f:
+                          for line in f:
+                              line = line.strip()
+                              if not line:
+                                  continue
+                              try:
+                                  item = json.loads(line)
+                              except json.JSONDecodeError:
+                                  continue
+                              flow = item.get("flow") if isinstance(item.get("flow"), dict) else item
+                              source_ns = flow_value(flow, ("source", "namespace"))
+                              source_workload = flow_value(
+                                  flow,
+                                  ("source", "pod_name"),
+                                  ("source", "workload_name"),
+                              )
+                              dest_ns = flow_value(flow, ("destination", "namespace"))
+                              dest_workload = flow_value(
+                                  flow,
+                                  ("destination", "pod_name"),
+                                  ("destination", "workload_name"),
+                              )
+                              port = flow_value(
+                                  flow,
+                                  ("l4", "TCP", "destination_port"),
+                                  ("l4", "UDP", "destination_port"),
+                              )
+                              reason = flow_value(flow, ("drop_reason_desc",), ("verdict",), default="DROPPED")
+                              key = (source_ns, source_workload, dest_ns, dest_workload, port, reason)
+                              groups[key] = groups.get(key, 0) + 1
+
+                  findings = []
+                  for key, count in sorted(groups.items()):
+                      source_ns, source_workload, dest_ns, dest_workload, port, reason = key
+                      unique_id = "cilium:" + ":".join(key)
+                      findings.append(
+                          {
+                              "title": f"Cilium dropped traffic: {source_ns}/{source_workload} -> {dest_ns}/{dest_workload}",
+                              "severity": "Medium",
+                              "description": (
+                                  f"Hubble observed {count} dropped flow(s). "
+                                  f"Drop reason: {reason}. Destination port: {port}."
+                              ),
+                              "date": run_date,
+                              "unique_id_from_tool": unique_id,
+                              "active": True,
+                              "verified": True,
+                              "false_p": False,
+                              "duplicate": False,
+                              "mitigated": None,
+                              "numerical_severity": "S3",
+                          }
+                      )
+
+                  report = json.dumps(findings).encode("utf-8")
+
+                  def multipart(fields, files):
+                      boundary = "----defectdojo-" + uuid.uuid4().hex
+                      body = bytearray()
+                      for name, value in fields.items():
+                          body.extend(f"--{boundary}\r\n".encode())
+                          body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+                          body.extend(str(value).encode())
+                          body.extend(b"\r\n")
+                      for name, filename, content, content_type in files:
+                          body.extend(f"--{boundary}\r\n".encode())
+                          body.extend(
+                              f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode()
+                          )
+                          body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
+                          body.extend(content)
+                          body.extend(b"\r\n")
+                      body.extend(f"--{boundary}--\r\n".encode())
+                      return boundary, bytes(body)
+
+                  fields = {
+                      "scan_type": os.environ["DEFECTDOJO_SCAN_TYPE"],
+                      "engagement": os.environ["DEFECTDOJO_ENGAGEMENT_ID"],
+                      "test_title": test_title,
+                      "close_old_findings": "false",
+                      "push_to_jira": "false",
+                      "verified": "true",
+                      "active": "true",
+                  }
+                  boundary, body = multipart(
+                      fields,
+                      [("file", "cilium-hubble-generic-findings.json", report, "application/json")],
+                  )
+                  dd_url = os.environ["DEFECTDOJO_URL"].rstrip("/") + "/api/v2/reimport-scan/"
+                  req = urllib.request.Request(
+                      dd_url,
+                      data=body,
+                      headers={
+                          "Authorization": f"Token {os.environ['DEFECTDOJO_API_TOKEN']}",
+                          "Content-Type": f"multipart/form-data; boundary={boundary}",
+                      },
+                      method="POST",
+                  )
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      print(resp.read().decode("utf-8"))
+
+                  print(f"DefectDojo Cilium/Hubble reimport success: {test_title}")
+              volumeMounts:
+                - name: work
+                  mountPath: /work

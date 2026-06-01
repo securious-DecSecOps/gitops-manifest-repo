@@ -25,6 +25,12 @@ spec:
           containers:
           - name: zap
             image: zaproxy/zap-stable:latest
+            env:
+            - name: DEFECTDOJO_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: defectdojo-api-token
+                  key: token
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: false
@@ -45,10 +51,10 @@ spec:
               fi
               echo "=== OWASP ZAP REPORT END ==="
               if [ -f /zap/wrk/report.xml ]; then
-                curl -s -X POST http://10.0.1.134:8080/api/v2/import-scan/ \
-                  -H "Authorization: Token 476420350f0300624bdb4d1e8fcd8eb3f485559c" \
+                curl -fsS -X POST http://10.0.1.134:8080/api/v2/import-scan/ \
+                  -H "Authorization: Token ${DEFECTDOJO_API_TOKEN}" \
                   -F "scan_type=ZAP Scan" \
-                  -F "engagement=4" \
+                  -F "engagement=8" \
                   -F "file=@/zap/wrk/report.xml" \
                   && echo "DefectDojo upload success" \
                   || echo "DefectDojo upload failed"

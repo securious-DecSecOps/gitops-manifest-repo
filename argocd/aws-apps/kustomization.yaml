@@ -4,5 +4,6 @@ resources:
   - vulnbank-msa-aws-dev.yaml
   - cilium-hubble.yaml
   - falco.yaml
+  - falco-defectdojo.yaml
   - kube-bench.yaml
   - owasp-zap.yaml

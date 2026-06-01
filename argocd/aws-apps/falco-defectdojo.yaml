@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco-defectdojo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/securious-DecSecOps/gitops-manifest-repo.git
+    targetRevision: main
+    path: platform/falco/defectdojo-batch
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

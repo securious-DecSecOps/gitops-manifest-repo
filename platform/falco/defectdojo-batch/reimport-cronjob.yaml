@@ -1,0 +1,207 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: falco-defectdojo-reimport
+  namespace: falco
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: falco-defectdojo-reimport
+  namespace: falco
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: falco-defectdojo-reimport
+  namespace: falco
+subjects:
+  - kind: ServiceAccount
+    name: falco-defectdojo-reimport
+    namespace: falco
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: falco-defectdojo-reimport
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: falco-defectdojo-reimport
+  namespace: falco
+spec:
+  schedule: "10 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: falco-defectdojo-reimport
+          restartPolicy: Never
+          containers:
+            - name: reimport
+              image: python:3.12-alpine
+              env:
+                - name: DEFECTDOJO_URL
+                  value: "http://10.0.1.134:8080"
+                - name: DEFECTDOJO_ENGAGEMENT_ID
+                  value: "11"
+                - name: DEFECTDOJO_SCAN_TYPE
+                  value: "Generic Findings Import"
+                - name: DEFECTDOJO_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: defectdojo-api-token
+                      key: token
+              command:
+                - python3
+                - -c
+                - |
+                  import datetime
+                  import http.client
+                  import json
+                  import os
+                  import ssl
+                  import sys
+                  import urllib.parse
+                  import urllib.request
+                  import uuid
+
+                  namespace = os.environ.get("POD_NAMESPACE", "falco")
+                  run_date = datetime.datetime.utcnow().date().isoformat()
+                  test_title = f"Falco Runtime Alerts - {run_date}"
+                  token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  kube_host = os.environ["KUBERNETES_SERVICE_HOST"]
+                  kube_port = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+
+                  with open(token_path, "r", encoding="utf-8") as f:
+                      kube_token = f.read().strip()
+
+                  kube_context = ssl.create_default_context(cafile=ca_path)
+
+                  def kube_get(path):
+                      req = urllib.request.Request(
+                          f"https://{kube_host}:{kube_port}{path}",
+                          headers={"Authorization": f"Bearer {kube_token}"},
+                      )
+                      with urllib.request.urlopen(req, context=kube_context, timeout=30) as resp:
+                          return resp.read().decode("utf-8")
+
+                  pods_path = (
+                      f"/api/v1/namespaces/{namespace}/pods?"
+                      + urllib.parse.urlencode({"labelSelector": "app.kubernetes.io/name=falco"})
+                  )
+                  pods = json.loads(kube_get(pods_path)).get("items", [])
+                  findings_by_id = {}
+
+                  priority_map = {
+                      "WARNING": ("Medium", "S3"),
+                      "ERROR": ("High", "S2"),
+                      "CRITICAL": ("Critical", "S1"),
+                      "ALERT": ("Critical", "S1"),
+                      "EMERGENCY": ("Critical", "S1"),
+                  }
+
+                  for pod in pods:
+                      pod_name = pod["metadata"]["name"]
+                      logs_path = (
+                          f"/api/v1/namespaces/{namespace}/pods/{pod_name}/log?"
+                          + urllib.parse.urlencode(
+                              {"container": "falco", "sinceSeconds": "86400", "tailLines": "10000"}
+                          )
+                      )
+                      try:
+                          log_body = kube_get(logs_path)
+                      except Exception as exc:
+                          print(f"warning: failed to read logs from {pod_name}: {exc}", file=sys.stderr)
+                          continue
+
+                      for line in log_body.splitlines():
+                          line = line.strip()
+                          if not line.startswith("{"):
+                              continue
+                          try:
+                              event = json.loads(line)
+                          except json.JSONDecodeError:
+                              continue
+
+                          priority = str(event.get("priority", "")).upper()
+                          if priority not in priority_map:
+                              continue
+
+                          fields = event.get("output_fields") or {}
+                          rule = event.get("rule") or "Falco runtime alert"
+                          object_id = fields.get("k8s.pod.name") or fields.get("container.id") or pod_name
+                          unique_id = f"falco:{rule}:{object_id}"
+                          severity, numerical = priority_map[priority]
+                          event_date = str(event.get("time") or run_date).split("T")[0]
+                          findings_by_id[unique_id] = {
+                              "title": rule,
+                              "severity": severity,
+                              "description": event.get("output") or rule,
+                              "date": event_date,
+                              "unique_id_from_tool": unique_id,
+                              "active": True,
+                              "verified": True,
+                              "false_p": False,
+                              "duplicate": False,
+                              "mitigated": None,
+                              "numerical_severity": numerical,
+                          }
+
+                  report = json.dumps(list(findings_by_id.values())).encode("utf-8")
+
+                  def multipart(fields, files):
+                      boundary = "----defectdojo-" + uuid.uuid4().hex
+                      body = bytearray()
+                      for name, value in fields.items():
+                          body.extend(f"--{boundary}\r\n".encode())
+                          body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+                          body.extend(str(value).encode())
+                          body.extend(b"\r\n")
+                      for name, filename, content, content_type in files:
+                          body.extend(f"--{boundary}\r\n".encode())
+                          body.extend(
+                              f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode()
+                          )
+                          body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
+                          body.extend(content)
+                          body.extend(b"\r\n")
+                      body.extend(f"--{boundary}--\r\n".encode())
+                      return boundary, bytes(body)
+
+                  fields = {
+                      "scan_type": os.environ["DEFECTDOJO_SCAN_TYPE"],
+                      "engagement": os.environ["DEFECTDOJO_ENGAGEMENT_ID"],
+                      "test_title": test_title,
+                      "close_old_findings": "false",
+                      "push_to_jira": "false",
+                      "verified": "true",
+                      "active": "true",
+                  }
+                  boundary, body = multipart(
+                      fields,
+                      [("file", "falco-generic-findings.json", report, "application/json")],
+                  )
+                  dd_url = os.environ["DEFECTDOJO_URL"].rstrip("/") + "/api/v2/reimport-scan/"
+                  req = urllib.request.Request(
+                      dd_url,
+                      data=body,
+                      headers={
+                          "Authorization": f"Token {os.environ['DEFECTDOJO_API_TOKEN']}",
+                          "Content-Type": f"multipart/form-data; boundary={boundary}",
+                      },
+                      method="POST",
+                  )
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      print(resp.read().decode("utf-8"))
+
+                  print(f"DefectDojo Falco reimport success: {test_title}")
