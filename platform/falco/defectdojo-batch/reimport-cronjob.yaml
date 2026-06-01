@@ -70,6 +70,7 @@ spec:
                   import os
                   import ssl
                   import sys
+                  import urllib.error
                   import urllib.parse
                   import urllib.request
                   import uuid
@@ -103,11 +104,11 @@ spec:
                   findings_by_id = {}
 
                   priority_map = {
-                      "WARNING": ("Medium", "S3"),
-                      "ERROR": ("High", "S2"),
-                      "CRITICAL": ("Critical", "S1"),
-                      "ALERT": ("Critical", "S1"),
-                      "EMERGENCY": ("Critical", "S1"),
+                      "WARNING": "Medium",
+                      "ERROR": "High",
+                      "CRITICAL": "Critical",
+                      "ALERT": "Critical",
+                      "EMERGENCY": "Critical",
                   }
 
                   for pod in pods:
@@ -141,7 +142,7 @@ spec:
                           rule = event.get("rule") or "Falco runtime alert"
                           object_id = fields.get("k8s.pod.name") or fields.get("container.id") or pod_name
                           unique_id = f"falco:{rule}:{object_id}"
-                          severity, numerical = priority_map[priority]
+                          severity = priority_map[priority]
                           event_date = str(event.get("time") or run_date).split("T")[0]
                           findings_by_id[unique_id] = {
                               "title": rule,
@@ -154,10 +155,9 @@ spec:
                               "false_p": False,
                               "duplicate": False,
                               "mitigated": None,
-                              "numerical_severity": numerical,
                           }
 
-                  report = json.dumps(list(findings_by_id.values())).encode("utf-8")
+                  report = json.dumps({"findings": list(findings_by_id.values())}).encode("utf-8")
 
                   def multipart(fields, files):
                       boundary = "----defectdojo-" + uuid.uuid4().hex
@@ -201,7 +201,11 @@ spec:
                       },
                       method="POST",
                   )
-                  with urllib.request.urlopen(req, timeout=60) as resp:
-                      print(resp.read().decode("utf-8"))
+                  try:
+                      with urllib.request.urlopen(req, timeout=60) as resp:
+                          print(resp.read().decode("utf-8"))
+                  except urllib.error.HTTPError as exc:
+                      print(exc.read().decode("utf-8"), file=sys.stderr)
+                      raise
 
                   print(f"DefectDojo Falco reimport success: {test_title}")
