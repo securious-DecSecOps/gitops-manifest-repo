@@ -86,7 +86,7 @@ spec:
 
                   curl -fsS -X POST http://10.0.1.134:8080/api/v2/import-scan/ \
                     -H "Authorization: Token ${DEFECTDOJO_API_TOKEN}" \
-                    -F "scan_type=Kube-Bench Scanner" \
+                    -F "scan_type=kube-bench Scan" \
                     -F "engagement=5" \
                     -F "file=@/output/kube-bench.json"
 
