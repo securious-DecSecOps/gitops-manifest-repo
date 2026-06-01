@@ -198,7 +198,6 @@ spec:
                               "active": True,
                               "verified": True,
                               "false_p": False,
-                              "duplicate": False,
                               "dynamic_finding": True,
                               "static_finding": False,
                           }
