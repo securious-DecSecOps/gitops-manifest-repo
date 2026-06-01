@@ -35,7 +35,7 @@ spec:
             - /bin/bash
             - -c
             - |
-              zap-baseline.py -t http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080 -c /zap/config/zap-baseline.conf -r report.html
+              zap-baseline.py -t http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080 -c /zap/config/zap-baseline.conf -r report.html -x report.xml
               EXIT_CODE=$?
               echo "=== OWASP ZAP REPORT START ==="
               if [ -f /zap/wrk/report.html ]; then
@@ -44,9 +44,15 @@ spec:
                 echo "Report file not found!"
               fi
               echo "=== OWASP ZAP REPORT END ==="
-              # zap-baseline 종료코드: 1=FAIL, 2=WARN (둘 다 '발견'이지 실행오류 아님).
-              # 스캔이 돌아갔으면 잡은 성공 처리하고, 3 이상(ZAP 실행/설정 오류)만 실패로 전파한다.
-              # (findings 자체는 DefectDojo로 보내 관리 — 잡 실패로 다루지 않는다)
+              if [ -f /zap/wrk/report.xml ]; then
+                curl -s -X POST http://10.0.1.134:8080/api/v2/import-scan/ \
+                  -H "Authorization: Token 476420350f0300624bdb4d1e8fcd8eb3f485559c" \
+                  -F "scan_type=ZAP Scan" \
+                  -F "engagement=4" \
+                  -F "file=@/zap/wrk/report.xml" \
+                  && echo "DefectDojo upload success" \
+                  || echo "DefectDojo upload failed"
+              fi
               if [ "${EXIT_CODE}" -ge 3 ]; then exit "${EXIT_CODE}"; fi
               exit 0
             volumeMounts:
