@@ -181,6 +181,7 @@ spec:
                   fields = {
                       "scan_type": os.environ["DEFECTDOJO_SCAN_TYPE"],
                       "engagement": os.environ["DEFECTDOJO_ENGAGEMENT_ID"],
+                      "product_name": "VulnBank",
                       "test_title": test_title,
                       "close_old_findings": "false",
                       "push_to_jira": "false",
