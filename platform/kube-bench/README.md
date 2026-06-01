@@ -12,6 +12,7 @@ K3s 환경에 완벽히 최적화되어 마스터/워커 노드의 보안 설정
 2. **주기적 스캔 (CronJob)**: `schedule: "0 3 * * 1"` 설정을 통해 매주 월요일 새벽 3시에 백그라운드에서 보안 감사를 자동 수행합니다.
 3. **호스트 리소스 접근 및 격리 해제**: 노드 내부 설정값(e.g., Kubelet 아규먼트, OS 설정 파일 등)을 검사할 수 있도록 `hostPID: true`, `privileged: true` 및 볼륨 마운트(`/var/lib/rancher`, `/var/lib/kubelet`, `/etc/systemd`)를 설정하였습니다.
 4. **보안 최소 권한 (RBAC)**: K8s 자원에 조회가 필요한 경우를 대비해 `nodes` 및 `pods`에 대해서만 `get`, `list` 권한을 갖는 `ServiceAccount`를 매핑했습니다.
+5. **DefectDojo 업로드 분리**: `kube-bench` 컨테이너는 JSON 리포트 생성만 담당하고, `defectdojo-upload` 컨테이너가 같은 `emptyDir` 볼륨의 리포트를 DefectDojo `Kube-Bench Scanner` parser로 업로드합니다.
 
 ---
 
@@ -30,10 +31,24 @@ K3s 환경에 완벽히 최적화되어 마스터/워커 노드의 보안 설정
 배포 이후 Jenkins 파이프라인 연동 전 또는 테스트 목적으로 즉시 진단을 시작하려면, CronJob을 기반으로 임시 Job을 생성하여 수행할 수 있습니다.
 
 ```bash
-kubectl create job --from=cronjob/kube-bench -n kube-bench kube-bench-manual-scan
+kubectl create job kube-bench-manual-$(date +%Y%m%d%H%M%S) \
+  --from=cronjob/kube-bench \
+  -n kube-bench
 ```
 
-### 2) 스캔 결과 로그 확인
+### 2) DefectDojo 업로드 토큰 준비
+
+kube-bench CronJob은 스캔 결과를 JSON으로 생성한 뒤 DefectDojo의 `Kube-Bench Scanner` parser로 업로드합니다.
+업로드는 `curlimages/curl` 기반 `defectdojo-upload` 컨테이너가 담당합니다.
+DefectDojo API 토큰은 GitOps 매니페스트에 평문으로 저장하지 않고, 런타임 클러스터의 Secret으로 주입합니다.
+
+```bash
+kubectl create secret generic defectdojo-api-token \
+  -n kube-bench \
+  --from-literal=token='<DefectDojo Token>'
+```
+
+### 3) 스캔 결과 로그 확인
 진단이 완료되면 아래 명령어로 생성된 Pod의 로그를 조회하여 각 CIS 평가 항목의 통과(`[PASS]`), 실패(`[FAIL]`), 경고(`[WARN]`) 내역을 확인합니다.
 
 ```bash
@@ -44,7 +59,9 @@ kubectl get pods -n kube-bench
 kubectl logs -n kube-bench -l app.kubernetes.io/name=kube-bench --tail=500
 ```
 
-### 3) 실패 항목 조치 가이드 (Remediation)
+DefectDojo 업로드가 성공하면 로그에 `DefectDojo upload success`가 출력되고, DefectDojo Engagement에 kube-bench Test가 생성됩니다.
+
+### 4) 실패 항목 조치 가이드 (Remediation)
 로그의 최하단에 각 실패 코드(`[FAIL]`)에 맞는 상세 Remediation Guide가 동적 출력됩니다.
 K3s 환경에서의 설정 변경은 다음 가이드를 따르십시오.
 

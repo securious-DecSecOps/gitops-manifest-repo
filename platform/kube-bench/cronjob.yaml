@@ -26,10 +26,21 @@ spec:
           containers:
             - name: kube-bench
               image: aquasec/kube-bench:latest
-              command: ["kube-bench", "--benchmark", "k3s-cis-1.7"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+
+                  kube-bench --benchmark k3s-cis-1.7 --json > /output/kube-bench.json
+                  touch /output/kube-bench.done
+
+                  cat /output/kube-bench.json
               securityContext:
                 privileged: true
               volumeMounts:
+                - name: kube-bench-output
+                  mountPath: /output
                 - name: var-lib-rancher
                   mountPath: /var/lib/rancher
                   readOnly: true
@@ -48,7 +59,44 @@ spec:
                 - name: etc-group
                   mountPath: /etc/group
                   readOnly: true
+            - name: defectdojo-upload
+              image: curlimages/curl:8.8.0
+              env:
+                - name: DEFECTDOJO_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: defectdojo-api-token
+                      key: token
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+
+                  i=0
+                  while [ "$i" -lt 300 ]; do
+                    if [ -f /output/kube-bench.done ]; then
+                      break
+                    fi
+                    i=$((i + 1))
+                    sleep 1
+                  done
+
+                  test -f /output/kube-bench.json
+
+                  curl -fsS -X POST http://10.0.1.134:8080/api/v2/import-scan/ \
+                    -H "Authorization: Token ${DEFECTDOJO_API_TOKEN}" \
+                    -F "scan_type=Kube-Bench Scanner" \
+                    -F "engagement=5" \
+                    -F "file=@/output/kube-bench.json"
+
+                  echo "DefectDojo upload success"
+              volumeMounts:
+                - name: kube-bench-output
+                  mountPath: /output
           volumes:
+            - name: kube-bench-output
+              emptyDir: {}
             - name: var-lib-rancher
               hostPath:
                 path: /var/lib/rancher
