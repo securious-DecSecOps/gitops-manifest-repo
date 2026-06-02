@@ -57,16 +57,6 @@ customRules:
 falcosidekick:
   enabled: true
   config:
-    slack:
+    webhook:
+      address: "http://falco-slack-formatter.falco.svc.cluster.local:8080/falco"
       minimumpriority: "warning"
-      outputformat: "text"
-      messageformat: |
-        [SecuBank Runtime] Falco {{ .Priority }} - {{ .Rule }}
-        {{ .Output }}
-        Action: Check Falco logs and DefectDojo daily reimport
-    extraEnv:
-      - name: SLACK_WEBHOOKURL
-        valueFrom:
-          secretKeyRef:
-            name: falco-slack-webhook
-            key: webhookurl

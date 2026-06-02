@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - hubble-ui-nodeport.yaml
   - defectdojo-security-events.yaml
+  - realtime-slack-notifier.yaml

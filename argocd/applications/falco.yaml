@@ -15,6 +15,9 @@ spec:
     - repoURL: 'https://github.com/securious-DecSecOps/gitops-manifest-repo.git'
       targetRevision: main
       ref: values
+    - repoURL: 'https://github.com/securious-DecSecOps/gitops-manifest-repo.git'
+      targetRevision: main
+      path: platform/falco/runtime-alerts
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: falco

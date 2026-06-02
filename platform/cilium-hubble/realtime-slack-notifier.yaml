@@ -1,0 +1,209 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cilium-hubble-slack-notifier
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: cilium-hubble-slack-notifier
+    app.kubernetes.io/part-of: cilium-hubble
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cilium-hubble-slack-notifier
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cilium-hubble-slack-notifier
+        app.kubernetes.io/part-of: cilium-hubble
+    spec:
+      serviceAccountName: cilium-hubble-defectdojo-reimport
+      volumes:
+        - name: work
+          emptyDir: {}
+      containers:
+        - name: hubble-stream
+          image: alpine/k8s:1.32.2
+          env:
+            - name: HUBBLE_NAMESPACE
+              value: "secure-path-dev"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              rm -f /work/hubble-events.pipe
+              mkfifo /work/hubble-events.pipe
+              while true; do
+                CILIUM_POD="$(kubectl -n kube-system get pods -l k8s-app=cilium -o jsonpath='{.items[0].metadata.name}')"
+                echo "Starting Hubble stream from ${CILIUM_POD}"
+                kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+                  hubble observe \
+                    --namespace "$HUBBLE_NAMESPACE" \
+                    --verdict DROPPED \
+                    --verdict ERROR \
+                    --follow \
+                    -o json \
+                  > /work/hubble-events.pipe || true
+                sleep 10
+              done
+          volumeMounts:
+            - name: work
+              mountPath: /work
+        - name: slack-notifier
+          image: python:3.12-alpine
+          env:
+            - name: HUBBLE_NAMESPACE
+              value: "secure-path-dev"
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: hubble-slack-webhook
+                  key: webhookurl
+            - name: DEDUPE_SECONDS
+              value: "60"
+          command:
+            - python3
+            - -c
+            - |
+              import json
+              import os
+              import time
+              import urllib.request
+
+              HUBBLE_NAMESPACE = os.environ["HUBBLE_NAMESPACE"]
+              SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
+              DEDUPE_SECONDS = int(os.environ.get("DEDUPE_SECONDS", "60"))
+              EVENTS_PIPE = "/work/hubble-events.pipe"
+              recent_alerts = {}
+
+              def flow_value(flow, *paths, default="unknown"):
+                  for path in paths:
+                      current = flow
+                      for part in path:
+                          if not isinstance(current, dict) or part not in current:
+                              current = None
+                              break
+                          current = current[part]
+                      if current not in (None, ""):
+                          return str(current)
+                  return default
+
+              def first_workload_name(flow, side):
+                  workloads = flow.get(side, {}).get("workloads")
+                  if isinstance(workloads, list) and workloads:
+                      name = workloads[0].get("name")
+                      if name:
+                          return str(name)
+                  return None
+
+              def short(value, limit=180):
+                  value = str(value)
+                  return value if len(value) <= limit else value[: limit - 3] + "..."
+
+              def mrkdwn_field(name, value):
+                  return {"type": "mrkdwn", "text": f"*{name}:*\n{short(value, 120)}"}
+
+              def send_slack(flow):
+                  source_ns = flow_value(flow, ("source", "namespace"))
+                  source_workload = first_workload_name(flow, "source") or flow_value(
+                      flow,
+                      ("source", "pod_name"),
+                      ("source", "workload_name"),
+                  )
+                  dest_ns = flow_value(flow, ("destination", "namespace"), default="world")
+                  dest_workload = flow_value(
+                      flow,
+                      ("destination", "pod_name"),
+                      ("destination", "workload_name"),
+                      ("IP", "destination"),
+                  )
+                  port = flow_value(
+                      flow,
+                      ("l4", "TCP", "destination_port"),
+                      ("l4", "UDP", "destination_port"),
+                  )
+                  verdict = flow_value(flow, ("verdict",), default="DROPPED")
+                  reason = flow_value(flow, ("drop_reason_desc",), ("event_type", "type"), default=verdict)
+                  event_time = flow_value(flow, ("time",), default="unknown")
+                  dedupe_key = (source_ns, source_workload, dest_ns, dest_workload, port, verdict, reason)
+                  now = time.time()
+                  if now - recent_alerts.get(dedupe_key, 0) < DEDUPE_SECONDS:
+                      return
+                  recent_alerts[dedupe_key] = now
+
+                  title = f"SecuBank Runtime · Hubble {verdict}"
+                  fallback = (
+                      f"{title} - {source_ns}/{source_workload} -> "
+                      f"{dest_ns}/{dest_workload}:{port} ({reason})"
+                  )
+                  payload = {
+                      "text": fallback,
+                      "blocks": [
+                          {
+                              "type": "header",
+                              "text": {
+                                  "type": "plain_text",
+                                  "text": title,
+                              },
+                          },
+                          {
+                              "type": "section",
+                              "text": {
+                                  "type": "mrkdwn",
+                                  "text": "*Network flow requires attention*",
+                              },
+                          },
+                          {
+                              "type": "section",
+                              "fields": [
+                                  mrkdwn_field("Namespace", HUBBLE_NAMESPACE),
+                                  mrkdwn_field("Source", f"{source_ns}/{source_workload}"),
+                                  mrkdwn_field("Destination", f"{dest_ns}/{dest_workload}:{port}"),
+                                  mrkdwn_field("Reason", reason),
+                                  mrkdwn_field("Verdict", verdict),
+                                  mrkdwn_field("Time", event_time),
+                              ],
+                          },
+                          {
+                              "type": "section",
+                              "text": {
+                                  "type": "mrkdwn",
+                                  "text": "*Action:* Review Hubble UI, Cilium policy, and DefectDojo daily finding.",
+                              },
+                          },
+                      ],
+                  }
+                  req = urllib.request.Request(
+                      SLACK_WEBHOOK_URL,
+                      data=json.dumps(payload).encode("utf-8"),
+                      headers={"Content-Type": "application/json"},
+                      method="POST",
+                  )
+                  with urllib.request.urlopen(req, timeout=10) as resp:
+                      print(f"Hubble Slack notification sent: HTTP {resp.status}", flush=True)
+
+              while not os.path.exists(EVENTS_PIPE):
+                  time.sleep(1)
+
+              while True:
+                  print("Reading Hubble Slack stream", flush=True)
+                  with open(EVENTS_PIPE, "r", encoding="utf-8") as stream:
+                      for line in stream:
+                          line = line.strip()
+                          if not line:
+                              continue
+                          try:
+                              item = json.loads(line)
+                          except json.JSONDecodeError:
+                              print(line, flush=True)
+                              continue
+                          flow = item.get("flow") if isinstance(item.get("flow"), dict) else item
+                          try:
+                              send_slack(flow)
+                          except Exception as exc:
+                              print(f"Hubble Slack notification failed: {exc}", flush=True)
+                  time.sleep(1)
+          volumeMounts:
+            - name: work
+              mountPath: /work
