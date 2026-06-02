@@ -27,7 +27,16 @@ K3s 환경에 완벽히 최적화되어 마스터/워커 노드의 보안 설정
 
 ## 🚀 사용법 및 트러블슈팅
 
-### 1) 수동 스캔 즉시 트리거 (One-off Job)
+### 1) 운영 실행 모델
+
+- ArgoCD `PostSync` hook: 플랫폼 배포 직후 자동 실행
+- CronJob: 매주 월요일 새벽 3시에 반복 실행
+- 수동 Job: 장애 재현이나 검증 때만 실행
+- 결과 연동: DefectDojo 업로드 + Slack Block Kit 요약 알림
+
+`runtime-security-slack-webhook` Secret이 `kube-bench` namespace에 있어야 Slack 알림이 전송됩니다.
+
+### 2) 수동 스캔 즉시 트리거 (One-off Job)
 배포 이후 Jenkins 파이프라인 연동 전 또는 테스트 목적으로 즉시 진단을 시작하려면, CronJob을 기반으로 임시 Job을 생성하여 수행할 수 있습니다.
 
 ```bash
@@ -36,7 +45,7 @@ kubectl create job kube-bench-manual-$(date +%Y%m%d%H%M%S) \
   -n kube-bench
 ```
 
-### 2) DefectDojo 업로드 토큰 준비
+### 3) DefectDojo 업로드 토큰 준비
 
 kube-bench CronJob은 스캔 결과를 JSON으로 생성한 뒤 DefectDojo의 `kube-bench Scan` parser로 업로드합니다.
 업로드는 `curlimages/curl` 기반 `defectdojo-upload` 컨테이너가 담당합니다.
@@ -48,7 +57,7 @@ kubectl create secret generic defectdojo-api-token \
   --from-literal=token='<DefectDojo Token>'
 ```
 
-### 3) 스캔 결과 로그 확인
+### 4) 스캔 결과 로그 확인
 진단이 완료되면 아래 명령어로 생성된 Pod의 로그를 조회하여 각 CIS 평가 항목의 통과(`[PASS]`), 실패(`[FAIL]`), 경고(`[WARN]`) 내역을 확인합니다.
 
 ```bash
@@ -61,7 +70,7 @@ kubectl logs -n kube-bench -l app.kubernetes.io/name=kube-bench --tail=500
 
 DefectDojo 업로드가 성공하면 로그에 `DefectDojo upload success`가 출력되고, DefectDojo Engagement에 kube-bench Test가 생성됩니다.
 
-### 4) 실패 항목 조치 가이드 (Remediation)
+### 5) 실패 항목 조치 가이드 (Remediation)
 로그의 최하단에 각 실패 코드(`[FAIL]`)에 맞는 상세 Remediation Guide가 동적 출력됩니다.
 K3s 환경에서의 설정 변경은 다음 가이드를 따르십시오.
 
