@@ -90,10 +90,36 @@ hubble observe --namespace secure-path-dev --type l7 --follow
 
 ### 3. Hubble UI 접속
 
+운영 기본 방식은 Public NodePort가 아니라 SSM + kubectl port-forward입니다.
+
+Runtime EC2:
+
 ```bash
-# Hubble UI는 NodePort 32000으로 외부에 노출됩니다.
-# 브라우저에서 아래 URL로 접속 (AWS Security Group TCP 32000 인바운드 허용 필요)
-echo "Hubble UI: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):32000"
+kubectl -n kube-system port-forward svc/hubble-ui 12000:80 --address 127.0.0.1
+```
+
+Local PowerShell:
+
+```powershell
+aws ssm start-session `
+  --profile devsecops `
+  --region ap-northeast-2 `
+  --target i-05d583e02dcb52aef `
+  --document-name AWS-StartPortForwardingSessionToRemoteHost `
+  --parameters "host=127.0.0.1,portNumber=12000,localPortNumber=12000"
+```
+
+브라우저 접속:
+
+```text
+http://localhost:12000/?namespace=secure-path-dev
+```
+
+Hubble UI는 service map과 topology 확인용입니다. Cilium에서 dropped 처리한 상세 flow와 drop reason은 아래 CLI를 주 증적으로 확인합니다.
+
+```bash
+kubectl -n kube-system exec ds/cilium -- hubble observe --namespace secure-path-dev --verdict DROPPED --last 100
+kubectl -n kube-system exec ds/cilium -- hubble observe --namespace secure-path-dev --verdict DROPPED --last 100 -o json
 ```
 
 ---
@@ -145,7 +171,7 @@ hubble observe --namespace secure-path-dev --verdict FORWARDED --type l7 --follo
 ```
 platform/cilium-hubble/
 ├── values.yaml                          # Cilium Helm Values (K3s 최적화 설정)
-├── hubble-ui-nodeport.yaml              # Hubble UI 외부 NodePort 서비스 (32000)
+├── hubble-ui-nodeport.yaml              # Hubble UI 임시 NodePort 서비스 (운영 기본은 SSM port-forward)
 ├── network-policies/
 │   ├── default-deny.yaml                # Zero-Trust: 기본 전체 차단 정책
 │   └── allow-vulnbank.yaml              # VulnBank MSA 화이트리스트 정책 (6개)
