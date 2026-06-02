@@ -11,7 +11,16 @@
 
 ---
 
-## 2. 수동 및 일회성 진단 실행 (Ad-hoc Scan)
+## 2. 운영 실행 모델
+
+- ArgoCD `PostSync` hook: VulnBank 배포 직후 자동 실행
+- CronJob: 정해진 주기에 반복 실행
+- 수동 Job: 장애 재현이나 검증 때만 실행
+- 결과 연동: DefectDojo 업로드 + Slack Block Kit 요약 알림
+
+`runtime-security-slack-webhook` Secret이 `owasp-zap` namespace에 있어야 Slack 알림이 전송됩니다.
+
+## 3. 수동 및 일회성 진단 실행 (Ad-hoc Scan)
 
 예정된 매일 새벽 2시 스케줄링 외에, 배포 직후 즉각적인 취약점 분석을 원할 때 아래 명령어로 일회성 스캔을 유발할 수 있습니다.
 
@@ -28,7 +37,7 @@ kubectl logs job/owasp-zap-manual -n owasp-zap | grep -A 10000 "=== OWASP ZAP RE
 
 ---
 
-## 3. 예외 설정 및 튜닝 (ConfigMap)
+## 4. 예외 설정 및 튜닝 (ConfigMap)
 웹 애플리케이션의 비즈니스 논리에 따라 불필요하게 발생하는 경고(False Positive)는 `configmap.yaml`에 정의된 `zap-baseline.conf` 규칙을 통해 조정할 수 있습니다.
 
 ```yaml
