@@ -32,7 +32,7 @@ spec:
                 - |
                   set -eu
 
-                  kube-bench --benchmark k3s-cis-1.7 --json > /output/kube-bench.json
+                  kube-bench --benchmark k3s-cis-1.7 --json > /output/kube-bench.json || true
                   touch /output/kube-bench.done
 
                   cat /output/kube-bench.json
@@ -60,13 +60,26 @@ spec:
                   mountPath: /etc/group
                   readOnly: true
             - name: defectdojo-upload
-              image: curlimages/curl:8.8.0
+              image: python:3.12-alpine
               env:
                 - name: DEFECTDOJO_API_TOKEN
                   valueFrom:
                     secretKeyRef:
                       name: defectdojo-api-token
                       key: token
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: runtime-security-slack-webhook
+                      key: webhookurl
+                - name: DEFECTDOJO_URL
+                  value: "http://10.0.1.134:8080"
+                - name: DEFECTDOJO_ENGAGEMENT_ID
+                  value: "9"
+                - name: KUBE_BENCH_BENCHMARK
+                  value: "k3s-cis-1.7"
+                - name: SCAN_TRIGGER
+                  value: "Scheduled CronJob"
               command:
                 - /bin/sh
                 - -c
@@ -84,19 +97,18 @@ spec:
 
                   test -f /output/kube-bench.json
 
-                  curl -fsS -X POST http://10.0.1.134:8080/api/v2/import-scan/ \
-                    -H "Authorization: Token ${DEFECTDOJO_API_TOKEN}" \
-                    -F "scan_type=kube-bench Scan" \
-                    -F "engagement=9" \
-                    -F "file=@/output/kube-bench.json"
-
-                  echo "DefectDojo upload success"
+                  python3 /config/kube-bench-slack-summary.py
               volumeMounts:
                 - name: kube-bench-output
                   mountPath: /output
+                - name: kube-bench-slack-summary
+                  mountPath: /config
           volumes:
             - name: kube-bench-output
               emptyDir: {}
+            - name: kube-bench-slack-summary
+              configMap:
+                name: kube-bench-slack-summary
             - name: var-lib-rancher
               hostPath:
                 path: /var/lib/rancher

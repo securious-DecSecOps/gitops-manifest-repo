@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-bench-slack-summary
+  namespace: kube-bench
+data:
+  kube-bench-slack-summary.py: |
+    import datetime
+    import json
+    import os
+    import sys
+    import urllib.error
+    import urllib.request
+    import uuid
+
+    DEFECTDOJO_URL = os.environ.get("DEFECTDOJO_URL", "http://10.0.1.134:8080").rstrip("/")
+    DEFECTDOJO_ENGAGEMENT_ID = os.environ.get("DEFECTDOJO_ENGAGEMENT_ID", "9")
+    DEFECTDOJO_API_TOKEN = os.environ["DEFECTDOJO_API_TOKEN"]
+    SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+    SCAN_TRIGGER = os.environ.get("SCAN_TRIGGER", "Scheduled")
+    BENCHMARK = os.environ.get("KUBE_BENCH_BENCHMARK", "k3s-cis-1.7")
+    REPORT_JSON = os.environ.get("REPORT_JSON", "/output/kube-bench.json")
+    RUN_DATE = datetime.datetime.utcnow().date().isoformat()
+    TEST_TITLE = f"kube-bench CIS Benchmark - {RUN_DATE}"
+
+    def multipart(fields, files):
+        boundary = "----defectdojo-" + uuid.uuid4().hex
+        body = bytearray()
+        for name, value in fields.items():
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            body.extend(str(value).encode())
+            body.extend(b"\r\n")
+        for name, filename, content, content_type in files:
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode())
+            body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
+            body.extend(content)
+            body.extend(b"\r\n")
+        body.extend(f"--{boundary}--\r\n".encode())
+        return boundary, bytes(body)
+
+    def short(value, limit=180):
+        value = str(value).strip()
+        return value if len(value) <= limit else value[: limit - 3] + "..."
+
+    with open(REPORT_JSON, "rb") as f:
+        report = f.read()
+    data = json.loads(report.decode("utf-8"))
+
+    counts = {"PASS": 0, "FAIL": 0, "WARN": 0, "INFO": 0}
+    failed_controls = []
+    for control in data.get("Controls", []):
+        for test in control.get("tests", []):
+            section = test.get("section") or ""
+            for result in test.get("results", []):
+                status = str(result.get("status", "INFO")).upper()
+                if status not in counts:
+                    counts[status] = 0
+                counts[status] += 1
+                if status == "FAIL":
+                    number = result.get("test_number") or result.get("test_number_string") or section
+                    desc = result.get("test_desc") or result.get("description") or "Unknown failed control"
+                    failed_controls.append(f"{number} {desc}".strip())
+
+    boundary, body = multipart(
+        {
+            "scan_type": "kube-bench Scan",
+            "engagement": DEFECTDOJO_ENGAGEMENT_ID,
+            "test_title": TEST_TITLE,
+            "close_old_findings": "false",
+            "push_to_jira": "false",
+            "verified": "true",
+            "active": "true",
+        },
+        [("file", "kube-bench.json", report, "application/json")],
+    )
+    req = urllib.request.Request(
+        DEFECTDOJO_URL + "/api/v2/import-scan/",
+        data=body,
+        headers={
+            "Authorization": f"Token {DEFECTDOJO_API_TOKEN}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            print(f"DefectDojo upload success: HTTP {resp.status}", flush=True)
+    except urllib.error.HTTPError as exc:
+        print(exc.read().decode("utf-8"), file=sys.stderr)
+        raise
+
+    if SLACK_WEBHOOK_URL:
+        result_line = (
+            f"PASS {counts.get('PASS', 0)}    FAIL {counts.get('FAIL', 0)}    "
+            f"WARN {counts.get('WARN', 0)}    INFO {counts.get('INFO', 0)}"
+        )
+        failed_lines = "\n".join(f"- {short(item, 140)}" for item in failed_controls[:5])
+        if not failed_lines:
+            failed_lines = "- No failed CIS controls"
+        fallback = f"SecuBank Runtime · kube-bench · {SCAN_TRIGGER} · {result_line}"
+        payload = {
+            "text": fallback,
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": "SecuBank Runtime · kube-bench"},
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*Trigger:*\n{SCAN_TRIGGER}"},
+                        {"type": "mrkdwn", "text": f"*Profile:*\n{BENCHMARK}"},
+                        {"type": "mrkdwn", "text": f"*Result:*\n{result_line}"},
+                        {"type": "mrkdwn", "text": f"*DefectDojo:*\nkube-bench / {TEST_TITLE}"},
+                    ],
+                },
+                {"type": "section", "text": {"type": "mrkdwn", "text": "*Top failed controls:*\n" + failed_lines}},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Action:*\nReview failed CIS controls before hardening changes.",
+                    },
+                },
+            ],
+        }
+        slack_req = urllib.request.Request(
+            SLACK_WEBHOOK_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(slack_req, timeout=10) as slack_resp:
+            print(f"Slack notification sent: HTTP {slack_resp.status}", flush=True)
