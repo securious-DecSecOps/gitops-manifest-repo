@@ -10,3 +10,141 @@ data:
     10096	WARN	Timestamp Disclosure - Unix
     10027	WARN	Information Disclosure - Suspicious Comments
     10037	WARN	Server Leaks Information via "X-Powered-By" HTTP Response Header Field(s)
+  zap-slack-summary.py: |
+    import datetime
+    import json
+    import os
+    import sys
+    import urllib.error
+    import urllib.request
+    import uuid
+    import xml.etree.ElementTree as ET
+
+    DEFECTDOJO_URL = os.environ.get("DEFECTDOJO_URL", "http://10.0.1.134:8080").rstrip("/")
+    DEFECTDOJO_ENGAGEMENT_ID = os.environ.get("DEFECTDOJO_ENGAGEMENT_ID", "8")
+    DEFECTDOJO_API_TOKEN = os.environ["DEFECTDOJO_API_TOKEN"]
+    SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+    TARGET_URL = os.environ.get("TARGET_URL", "http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080")
+    SCAN_TRIGGER = os.environ.get("SCAN_TRIGGER", "Scheduled")
+    REPORT_XML = os.environ.get("REPORT_XML", "/zap/wrk/report.xml")
+    RUN_DATE = datetime.datetime.utcnow().date().isoformat()
+    TEST_TITLE = f"OWASP ZAP DAST - {RUN_DATE}"
+
+    def multipart(fields, files):
+        boundary = "----defectdojo-" + uuid.uuid4().hex
+        body = bytearray()
+        for name, value in fields.items():
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            body.extend(str(value).encode())
+            body.extend(b"\r\n")
+        for name, filename, content, content_type in files:
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode())
+            body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
+            body.extend(content)
+            body.extend(b"\r\n")
+        body.extend(f"--{boundary}--\r\n".encode())
+        return boundary, bytes(body)
+
+    def short(value, limit=220):
+        value = str(value).strip()
+        return value if len(value) <= limit else value[: limit - 3] + "..."
+
+    def risk_bucket(riskdesc):
+        head = str(riskdesc or "Informational").split(" ", 1)[0].strip().lower()
+        mapping = {
+            "high": "High",
+            "medium": "Medium",
+            "low": "Low",
+            "informational": "Info",
+            "info": "Info",
+        }
+        return mapping.get(head, "Info")
+
+    counts = {"High": 0, "Medium": 0, "Low": 0, "Info": 0}
+    issues = []
+    if os.path.exists(REPORT_XML):
+        tree = ET.parse(REPORT_XML)
+        root = tree.getroot()
+        for alert in root.findall(".//alertitem"):
+            name = alert.findtext("alert") or alert.findtext("name") or "Unknown ZAP alert"
+            risk = risk_bucket(alert.findtext("riskdesc") or alert.findtext("riskcode"))
+            counts[risk] = counts.get(risk, 0) + 1
+            issues.append((risk, name))
+
+    with open(REPORT_XML, "rb") as f:
+        report = f.read()
+
+    boundary, body = multipart(
+        {
+            "scan_type": "ZAP Scan",
+            "engagement": DEFECTDOJO_ENGAGEMENT_ID,
+            "test_title": TEST_TITLE,
+            "close_old_findings": "false",
+            "push_to_jira": "false",
+            "verified": "true",
+            "active": "true",
+        },
+        [("file", "zap-report.xml", report, "application/xml")],
+    )
+    req = urllib.request.Request(
+        DEFECTDOJO_URL + "/api/v2/import-scan/",
+        data=body,
+        headers={
+            "Authorization": f"Token {DEFECTDOJO_API_TOKEN}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            print(f"DefectDojo upload success: HTTP {resp.status}", flush=True)
+    except urllib.error.HTTPError as exc:
+        print(exc.read().decode("utf-8"), file=sys.stderr)
+        raise
+
+    if SLACK_WEBHOOK_URL:
+        severity_line = (
+            f"High {counts.get('High', 0)}    Medium {counts.get('Medium', 0)}    "
+            f"Low {counts.get('Low', 0)}    Info {counts.get('Info', 0)}"
+        )
+        top_issues = issues[:5]
+        issue_lines = "\n".join(f"- {risk}: {short(name, 120)}" for risk, name in top_issues)
+        if not issue_lines:
+            issue_lines = "- No ZAP alerts in report"
+        fallback = f"SecuBank DAST · OWASP ZAP · {SCAN_TRIGGER} · {severity_line}"
+        payload = {
+            "text": fallback,
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": "SecuBank DAST · OWASP ZAP"},
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*Trigger:*\n{SCAN_TRIGGER}"},
+                        {"type": "mrkdwn", "text": f"*Target:*\n{TARGET_URL}"},
+                        {"type": "mrkdwn", "text": f"*Findings:*\n{severity_line}"},
+                        {"type": "mrkdwn", "text": f"*DefectDojo:*\nowasp-zap / {TEST_TITLE}"},
+                    ],
+                },
+                {"type": "section", "text": {"type": "mrkdwn", "text": "*Top issues:*\n" + issue_lines}},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Action:*\nReview DefectDojo ZAP test and the HTML report in Job logs.",
+                    },
+                },
+            ],
+        }
+        slack_req = urllib.request.Request(
+            SLACK_WEBHOOK_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(slack_req, timeout=10) as slack_resp:
+            print(f"Slack notification sent: HTTP {slack_resp.status}", flush=True)

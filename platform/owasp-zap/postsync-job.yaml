@@ -1,0 +1,107 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: owasp-zap-postsync
+  namespace: owasp-zap
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: owasp-zap-sa
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-vulnbank
+          image: curlimages/curl:8.8.0
+          env:
+            - name: TARGET_URL
+              value: "http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              i=0
+              until curl -fsS --max-time 5 "$TARGET_URL" >/dev/null; do
+                i=$((i + 1))
+                if [ "$i" -ge 60 ]; then
+                  echo "VulnBank frontend did not become reachable: $TARGET_URL"
+                  exit 1
+                fi
+                sleep 5
+              done
+              echo "VulnBank frontend is reachable: $TARGET_URL"
+      containers:
+        - name: zap
+          image: zaproxy/zap-stable:latest
+          env:
+            - name: DEFECTDOJO_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: defectdojo-api-token
+                  key: token
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: runtime-security-slack-webhook
+                  key: webhookurl
+            - name: DEFECTDOJO_URL
+              value: "http://10.0.1.134:8080"
+            - name: DEFECTDOJO_ENGAGEMENT_ID
+              value: "8"
+            - name: TARGET_URL
+              value: "http://vulnbank-msa-frontend.secure-path-dev.svc.cluster.local:8080"
+            - name: SCAN_TRIGGER
+              value: "ArgoCD PostSync"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -c
+            - |
+              zap-baseline.py -t "${TARGET_URL}" -c /zap/config/zap-baseline.conf -r report.html -x report.xml
+              EXIT_CODE=$?
+              echo "=== OWASP ZAP REPORT START ==="
+              if [ -f /zap/wrk/report.html ]; then
+                cat /zap/wrk/report.html
+              else
+                echo "Report file not found!"
+              fi
+              echo "=== OWASP ZAP REPORT END ==="
+              if [ -f /zap/wrk/report.xml ]; then
+                python3 /zap/config/zap-slack-summary.py
+              else
+                echo "ZAP XML report not found; skipping DefectDojo and Slack notification"
+              fi
+              if [ "${EXIT_CODE}" -ge 3 ]; then exit "${EXIT_CODE}"; fi
+              exit 0
+          volumeMounts:
+            - name: zap-workdir
+              mountPath: /zap/wrk
+            - name: zap-config
+              mountPath: /zap/config
+      volumes:
+        - name: zap-workdir
+          emptyDir: {}
+        - name: zap-config
+          configMap:
+            name: owasp-zap-config
