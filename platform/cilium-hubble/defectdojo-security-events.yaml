@@ -241,11 +241,86 @@ spec:
                       raise
 
                   if findings:
-                      slack_payload = {
-                          "text": (
-                              f"Cilium/Hubble detected {len(findings)} dropped traffic finding(s) "
-                              f"for {os.environ['HUBBLE_NAMESPACE']} and reimported them to DefectDojo."
+                      raw_flow_count = sum(groups.values())
+                      top_flows = sorted(groups.items(), key=lambda item: item[1], reverse=True)[:5]
+                      top_flow_lines = []
+                      for key, count in top_flows:
+                          source_ns, source_workload, dest_ns, dest_workload, port, reason = key
+                          top_flow_lines.append(
+                              f"- {source_ns}/{source_workload} -> {dest_ns}/{dest_workload}:{port} "
+                              f"({reason}, count={count})"
                           )
+
+                      slack_text = (
+                          "[SecuBank Runtime] Cilium/Hubble DROPPED traffic\n"
+                          f"Namespace: {os.environ['HUBBLE_NAMESPACE']}\n"
+                          f"Findings: {len(findings)} grouped finding(s), {raw_flow_count} raw dropped flow(s)\n"
+                          f"DefectDojo: reimported to cilium-hubble / {test_title}\n"
+                          "Action: Review Hubble UI via SSM port-forward and DefectDojo finding"
+                      )
+                      slack_payload = {
+                          "text": slack_text,
+                          "blocks": [
+                              {
+                                  "type": "header",
+                                  "text": {
+                                      "type": "plain_text",
+                                      "text": "[SecuBank Runtime] Cilium/Hubble DROPPED traffic",
+                                  },
+                              },
+                              {
+                                  "type": "section",
+                                  "fields": [
+                                      {
+                                          "type": "mrkdwn",
+                                          "text": f"*Namespace:*\n{os.environ['HUBBLE_NAMESPACE']}",
+                                      },
+                                      {
+                                          "type": "mrkdwn",
+                                          "text": (
+                                              f"*Findings:*\n{len(findings)} grouped / "
+                                              f"{raw_flow_count} raw"
+                                          ),
+                                      },
+                                      {
+                                          "type": "mrkdwn",
+                                          "text": "*Engagement:*\ncilium-hubble",
+                                      },
+                                      {
+                                          "type": "mrkdwn",
+                                          "text": f"*Test title:*\n{test_title}",
+                                      },
+                                  ],
+                              },
+                              {
+                                  "type": "section",
+                                  "text": {
+                                      "type": "mrkdwn",
+                                      "text": "*Top dropped flows:*\n" + "\n".join(top_flow_lines),
+                                  },
+                              },
+                              {
+                                  "type": "section",
+                                  "text": {
+                                      "type": "mrkdwn",
+                                      "text": (
+                                          "*DefectDojo:*\n"
+                                          f"Reimported {len(findings)} grouped finding(s) "
+                                          f"from {raw_flow_count} raw dropped flow(s)."
+                                      ),
+                                  },
+                              },
+                              {
+                                  "type": "section",
+                                  "text": {
+                                      "type": "mrkdwn",
+                                      "text": (
+                                          "*Action:*\nReview Hubble UI via SSM port-forward "
+                                          "and DefectDojo finding."
+                                      ),
+                                  },
+                              },
+                          ],
                       }
                       slack_req = urllib.request.Request(
                           os.environ["SLACK_WEBHOOK_URL"],

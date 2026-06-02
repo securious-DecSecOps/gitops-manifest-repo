@@ -36,7 +36,7 @@ customRules:
         and (container.image.repository contains "vulnbank" or container.name contains "vulnbank")
         and proc.name in (bash, sh, ash, zsh, ksh)
       output: >
-        Shell spawned in VulnBank container (user=%user.name parent=%proc.pname cmdline=%proc.cmdline image_repo=%container.image.repository image_tag=%container.image.tag container_id=%container.id)
+        Namespace=%k8s.ns.name Pod=%k8s.pod.name Container=%container.name User=%user.name Command=%proc.cmdline Image=%container.image.repository:%container.image.tag Time=%evt.time
       priority: WARNING
       tags: [mitre_execution, vulnbank, runtime_security]
 
@@ -51,7 +51,7 @@ customRules:
           (evt.type in (rename, renameat, renameat2) and evt.dir = < and fs.path.target endswith ".php")
         )
       output: >
-        PHP file written/moved in VulnBank web root (file=%fd.name target=%fs.path.target user=%user.name proc=%proc.name cmdline=%proc.cmdline container_id=%container.id image=%container.image.repository:%container.image.tag k8s_pod=%k8s.pod.name)
+        Namespace=%k8s.ns.name Pod=%k8s.pod.name Container=%container.name User=%user.name File=%fd.name Target=%fs.path.target Command=%proc.cmdline Image=%container.image.repository:%container.image.tag Time=%evt.time
       priority: CRITICAL
       tags: [mitre_persistence, vulnbank, webshell_detection]
 falcosidekick:
@@ -59,7 +59,11 @@ falcosidekick:
   config:
     slack:
       minimumpriority: "warning"
-      outputformat: "all"
+      outputformat: "text"
+      messageformat: |
+        [SecuBank Runtime] Falco {{ .Priority }} - {{ .Rule }}
+        {{ .Output }}
+        Action: Check Falco logs and DefectDojo daily reimport
     extraEnv:
       - name: SLACK_WEBHOOKURL
         valueFrom:
